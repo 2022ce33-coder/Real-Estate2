@@ -169,12 +169,20 @@ export function AreaIntelligencePanel({ area = defaultArea, isLoading: initialLo
       }
 
       try {
+        // First try to get agents by city
         const agentsResponse = await fetch(
           `http://localhost:3001/api/agents/city/${encodeURIComponent(areaName)}`
         );
         const agentsData = await agentsResponse.json();
-        if (agentsData.success && agentsData.data) {
+        if (agentsData.success && agentsData.data && agentsData.data.length > 0) {
           agentCount = agentsData.data.length.toString();
+        } else {
+          // Fallback: get all verified agents count
+          const allAgentsResponse = await fetch(`http://localhost:3001/api/agents`);
+          const allAgentsData = await allAgentsResponse.json();
+          if (allAgentsData.success && allAgentsData.data) {
+            agentCount = allAgentsData.data.length.toString() + "+";
+          }
         }
       } catch (error) {
         console.error("Error fetching agents:", error);

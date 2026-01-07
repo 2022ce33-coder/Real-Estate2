@@ -1,14 +1,24 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { MapPin, Sparkles, Loader2, X, AlertCircle, Map, DollarSign, Home } from "lucide-react";
+import { MapPin, Sparkles, Loader2, X, AlertCircle, Map, DollarSign, Home, Building2, Layers, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Bytez from "bytez.js";
 import { AgentCard } from "@/components/agents/AgentCard";
-import { fetchAgentsByArea } from "@/lib/agentService";
+import { fetchAgentsByArea, fetchAgentsBySociety } from "@/lib/agentService";
 import type { AgentData } from "@/lib/agentService";
+import { 
+  HOUSING_SOCIETIES, 
+  getSocietiesByCity, 
+  getPhasesForSociety, 
+  getBlocksForPhase,
+  getSocietyById,
+  type HousingSociety,
+  type Phase,
+  type Block
+} from "@/lib/housingSocieties";
 
 interface AreaSearchResult {
   name: string;
@@ -63,8 +73,9 @@ const priceRanges = [
   { label: "All Prices", value: "all" }
 ];
 
-const GEMINI_API_KEY = "AIzaSyCQ7PJ82gb_bCty38IxrFj2aXzRQ8tSJR0";
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const BYTEZ_API_KEY = "9b9fcd249b61ec762cb4314b43269e54";
+const sdk = new Bytez(BYTEZ_API_KEY);
+const geminiModel = sdk.model("google/gemini-2.5-pro");
 
 export function HomeSearchPanel({ onAreaFound }: HomeSearchPanelProps) {
   const navigate = useNavigate();
@@ -87,9 +98,117 @@ export function HomeSearchPanel({ onAreaFound }: HomeSearchPanelProps) {
   const [showCityDropdown, setShowCityDropdown] = useState(false);
   const [showAreaDropdown, setShowAreaDropdown] = useState(false);
   const [showPriceDropdown, setShowPriceDropdown] = useState(false);
+  
+  // Society filter states
+  const [selectedSociety, setSelectedSociety] = useState<string>("");
+  const [selectedPhase, setSelectedPhase] = useState<string>("");
+  const [selectedBlock, setSelectedBlock] = useState<string>("");
+  const [showSocietyDropdown, setShowSocietyDropdown] = useState(false);
+  const [showPhaseDropdown, setShowPhaseDropdown] = useState(false);
+  const [showBlockDropdown, setShowBlockDropdown] = useState(false);
+  const [availableSocieties, setAvailableSocieties] = useState<HousingSociety[]>(HOUSING_SOCIETIES);
+  const [availablePhases, setAvailablePhases] = useState<Phase[]>([]);
+  const [availableBlocks, setAvailableBlocks] = useState<Block[]>([]);
 
   const cities = Object.keys(citiesAndAreas);
   const availableAreas = selectedCity ? citiesAndAreas[selectedCity] : [];
+  
+  // Update societies when city changes
+  useEffect(() => {
+    if (selectedCity) {
+      const societies = getSocietiesByCity(selectedCity);
+      setAvailableSocieties(societies.length > 0 ? societies : HOUSING_SOCIETIES);
+    } else {
+      setAvailableSocieties(HOUSING_SOCIETIES);
+    }
+    // Reset society selection when city changes
+    setSelectedSociety("");
+    setSelectedPhase("");
+    setSelectedBlock("");
+    setAvailablePhases([]);
+    setAvailableBlocks([]);
+  }, [selectedCity]);
+  
+  // Auto-search function for society-based search
+  const searchBySociety = async (society: string, phase: string, block: string) => {
+    if (!society) return;
+    
+    setLoading(true);
+    setError("");
+    try {
+      const societyData = getSocietyById(society);
+      const agents = await fetchAgentsBySociety(society, phase, block);
+      setFilteredAgents(agents);
+      
+      // Build location name for display
+      let locationName = societyData?.name || society;
+      if (phase) locationName += ` - ${phase}`;
+      if (block) locationName += ` - ${block}`;
+      
+      setResult({
+        name: locationName,
+        description: `Showing agents with properties in ${locationName}. ${societyData?.city ? `Located in ${societyData.city}.` : ''}`,
+        amenities: ["Gated Community", "24/7 Security", "Parks", "Schools", "Commercial Areas", "Healthcare"],
+        highlights: [
+          "Premium housing society",
+          "Verified agents available",
+          `${agents.length} agent${agents.length !== 1 ? 's' : ''} found`
+        ],
+      });
+    } catch (err) {
+      setError("Failed to search by society. Please try again.");
+      setFilteredAgents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Update phases when society changes and auto-search
+  useEffect(() => {
+    if (selectedSociety) {
+      const phases = getPhasesForSociety(selectedSociety);
+      setAvailablePhases(phases);
+      setSelectedPhase("");
+      setSelectedBlock("");
+      setAvailableBlocks([]);
+      // Auto-search when society is selected
+      searchBySociety(selectedSociety, "", "");
+    } else {
+      setAvailablePhases([]);
+      setSelectedPhase("");
+      setSelectedBlock("");
+      setAvailableBlocks([]);
+      // Clear results when society is deselected
+      if (!searchInput && !selectedCity && !selectedArea) {
+        setResult(null);
+        setFilteredAgents([]);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSociety]);
+  
+  // Update blocks when phase changes and auto-search
+  useEffect(() => {
+    if (selectedSociety && selectedPhase) {
+      const blocks = getBlocksForPhase(selectedSociety, selectedPhase);
+      setAvailableBlocks(blocks);
+      setSelectedBlock("");
+      // Auto-search when phase is selected
+      searchBySociety(selectedSociety, selectedPhase, "");
+    } else if (selectedSociety) {
+      setAvailableBlocks([]);
+      setSelectedBlock("");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSociety, selectedPhase]);
+  
+  // Auto-search when block changes
+  useEffect(() => {
+    if (selectedSociety && selectedPhase && selectedBlock) {
+      searchBySociety(selectedSociety, selectedPhase, selectedBlock);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBlock]);
 
   // Get filtered price label
   const getPriceLabel = () => {
@@ -112,16 +231,29 @@ export function HomeSearchPanel({ onAreaFound }: HomeSearchPanelProps) {
       let aiAvailable = true;
 
       try {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const prompt = `You are a real estate expert for Pakistan. Provide a detailed overview of ${area} in Pakistan.
 
-        const prompt = `Give a short description of ${area} in Pakistan and list popular amenities (no exact location coordinates). Keep it concise for real estate purposes.
+Write 3-4 lines (about 50-80 words) describing this area including:
+- Location significance and connectivity
+- Type of neighborhood (residential, commercial, or mixed)
+- Notable landmarks or features
+- Real estate market appeal and lifestyle
+
+Then list 6 popular amenities nearby (no exact coordinates).
       
 Format your response exactly as:
-Description: [Your description here]
+Description: [Write 3-4 detailed lines about the area here]
 Amenities: School, Hospital, Market, Park, Mosque, Gym`;
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response.text();
+        const { error, output } = await geminiModel.run([
+          { role: "user", content: prompt }
+        ]);
+
+        if (error) {
+          throw new Error(typeof error === 'string' ? error : "AI request failed");
+        }
+
+        const response = output?.content || output?.message?.content || "";
 
         // Parse the response
         const descriptionMatch = response.match(/Description:\s*(.+?)(?=Amenities:|$)/s);
@@ -129,7 +261,7 @@ Amenities: School, Hospital, Market, Park, Mosque, Gym`;
 
         const description = descriptionMatch ? descriptionMatch[1].trim() : response;
         const amenitiesText = amenitiesMatch ? amenitiesMatch[1].trim() : "School, Hospital, Market, Park, Mosque, Gym";
-        const amenitiesArray = amenitiesText.split(",").map(a => a.trim()).filter(a => a);
+        const amenitiesArray = amenitiesText.split(",").map((a: string) => a.trim()).filter((a: string) => a);
 
         areaResult = {
           name: area,
@@ -206,7 +338,6 @@ Amenities: School, Hospital, Market, Park, Mosque, Gym`;
     setAmenityDetails("");
 
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       const prompt = `For ${area} in Pakistan, provide 2-3 brief examples of ${amenity} (no specific addresses).
 
 Format your response EXACTLY as a simple list with maximum 10 lines total:
@@ -216,8 +347,15 @@ Example 3: [Name] - [Brief 1 line description]
 
 Keep each example to one line only. No markdown, no asterisks, no special formatting. If specific examples don't exist, provide general information about ${amenity} in the region in the same format.`;
 
-      const result = await model.generateContent(prompt);
-      let response = await result.response.text();
+      const { error, output } = await geminiModel.run([
+        { role: "user", content: prompt }
+      ]);
+
+      if (error) {
+        throw new Error(typeof error === 'string' ? error : "Failed to fetch details");
+      }
+
+      let response = output?.content || output?.message?.content || "";
 
       // Clean up markdown formatting
       response = response
@@ -228,7 +366,7 @@ Keep each example to one line only. No markdown, no asterisks, no special format
         .trim();
 
       // Limit to 10 lines
-      const lines = response.split('\n').filter(line => line.trim());
+      const lines = response.split('\n').filter((line: string) => line.trim());
       const limitedResponse = lines.slice(0, 10).join('\n');
 
       setAmenityDetails(limitedResponse);
@@ -250,14 +388,53 @@ Keep each example to one line only. No markdown, no asterisks, no special format
     setSelectedCity("");
     setSelectedArea("");
     setSelectedPrice("");
+    setSelectedSociety("");
+    setSelectedPhase("");
+    setSelectedBlock("");
+    setAvailablePhases([]);
+    setAvailableBlocks([]);
   };
 
-  const handleFilterSearch = () => {
+  const handleFilterSearch = async () => {
+    // If society is selected, search by society
+    if (selectedSociety) {
+      setLoading(true);
+      setError("");
+      try {
+        const society = getSocietyById(selectedSociety);
+        const agents = await fetchAgentsBySociety(selectedSociety, selectedPhase, selectedBlock);
+        setFilteredAgents(agents);
+        
+        // Build location name for display
+        let locationName = society?.name || selectedSociety;
+        if (selectedPhase) locationName += ` - ${selectedPhase}`;
+        if (selectedBlock) locationName += ` - ${selectedBlock}`;
+        
+        setResult({
+          name: locationName,
+          description: `Showing agents with properties in ${locationName}. ${society?.city ? `Located in ${society.city}.` : ''}`,
+          amenities: ["Gated Community", "24/7 Security", "Parks", "Schools", "Commercial Areas", "Healthcare"],
+          highlights: [
+            "Premium housing society",
+            "Verified agents available",
+            `${agents.length} agent${agents.length !== 1 ? 's' : ''} found`
+          ],
+        });
+      } catch (err) {
+        setError("Failed to search by society. Please try again.");
+        setFilteredAgents([]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    
+    // Otherwise use area search
     const searchArea = selectedArea || selectedCity || searchInput;
     if (searchArea.trim()) {
       handleSearch(searchArea);
     } else {
-      setError("Please select a city/area or enter a search term");
+      setError("Please select a city/area/society or enter a search term");
     }
   };
 
@@ -265,163 +442,194 @@ Keep each example to one line only. No markdown, no asterisks, no special format
     <div className="w-full space-y-6">
       {/* Filter Section */}
       <div className="space-y-3">
-        <div className="flex items-center gap-2 mb-2">
-          <Home className="w-4 h-4 text-primary" />
-          <p className="text-sm font-semibold text-foreground">Filter Your Search</p>
-        </div>
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* City Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowCityDropdown(!showCityDropdown);
-                setShowAreaDropdown(false);
-                setShowPriceDropdown(false);
-              }}
-              className="w-full px-4 py-2.5 rounded-xl bg-card border-2 border-border hover:border-primary/50 transition-all text-left flex items-center justify-between gap-2 text-sm font-medium text-foreground glass-card"
-            >
-              <span className="flex items-center gap-2 flex-1 truncate">
-                <MapPin className="w-4 h-4 text-primary flex-shrink-0" />
-                <span className="truncate">{selectedCity || "Select City"}</span>
-              </span>
-              <span className={`text-primary transition-transform ${showCityDropdown ? "rotate-180" : ""}`}>▼</span>
-            </button>
-            
-            {showCityDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-card border-2 border-primary/30 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
-                {cities.map((city) => (
-                  <button
-                    key={city}
-                    onClick={() => {
-                      setSelectedCity(city);
-                      setSelectedArea("");
-                      setShowCityDropdown(false);
-                    }}
-                    className={`w-full text-left px-4 py-2.5 transition-all border-b border-border/30 last:border-0 text-sm flex items-center gap-2 ${
-                      selectedCity === city 
-                        ? "bg-primary/20 text-primary font-medium" 
-                        : "hover:bg-accent/50 text-foreground"
-                    }`}
-                  >
-                    <MapPin className="w-4 h-4 flex-shrink-0" />
-                    {city}
-                  </button>
-                ))}
-              </div>
-            )}
+        {/* Housing Society Filters */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Building2 className="w-4 h-4 text-orange-500" />
+            <p className="text-sm font-semibold text-foreground">Search by Housing Society</p>
           </div>
-
-          {/* Area Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                if (selectedCity) {
-                  setShowAreaDropdown(!showAreaDropdown);
+          
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Society Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowSocietyDropdown(!showSocietyDropdown);
                   setShowCityDropdown(false);
+                  setShowAreaDropdown(false);
                   setShowPriceDropdown(false);
-                }
-              }}
-              disabled={!selectedCity}
-              className={`w-full px-4 py-2.5 rounded-xl border-2 transition-all text-left flex items-center justify-between gap-2 text-sm font-medium glass-card ${
-                selectedCity
-                  ? "bg-card border-border hover:border-primary/50 text-foreground cursor-pointer"
-                  : "bg-muted/30 border-border/50 text-muted-foreground cursor-not-allowed opacity-50"
-              }`}
-            >
-              <span className="flex items-center gap-2 flex-1 truncate">
-                <MapPin className="w-4 h-4 text-accent flex-shrink-0" />
-                <span className="truncate">{selectedArea || "Select Area"}</span>
-              </span>
-              <span className={`text-accent transition-transform ${showAreaDropdown ? "rotate-180" : ""}`}>▼</span>
-            </button>
-            
-            {showAreaDropdown && selectedCity && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-card border-2 border-accent/30 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
-                {availableAreas.map((area) => (
-                  <button
-                    key={area}
-                    onClick={() => {
-                      setSelectedArea(area);
-                      setShowAreaDropdown(false);
-                    }}
-                    className={`w-full text-left px-4 py-2.5 transition-all border-b border-border/30 last:border-0 text-sm flex items-center gap-2 ${
-                      selectedArea === area 
-                        ? "bg-accent/20 text-accent font-medium" 
-                        : "hover:bg-primary/10 text-foreground"
-                    }`}
-                  >
-                    <MapPin className="w-4 h-4 flex-shrink-0" />
-                    {area}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+                  setShowPhaseDropdown(false);
+                  setShowBlockDropdown(false);
+                }}
+                className="w-full px-4 py-2.5 rounded-xl bg-card border-2 border-border hover:border-orange-500/50 transition-all text-left flex items-center justify-between gap-2 text-sm font-medium text-foreground glass-card"
+              >
+                <span className="flex items-center gap-2 flex-1 truncate">
+                  <Building2 className="w-4 h-4 text-orange-500 flex-shrink-0" />
+                  <span className="truncate">
+                    {selectedSociety ? getSocietyById(selectedSociety)?.name : "Select Society"}
+                  </span>
+                </span>
+                <span className={`text-orange-500 transition-transform ${showSocietyDropdown ? "rotate-180" : ""}`}>▼</span>
+              </button>
+              
+              {showSocietyDropdown && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-card border-2 border-orange-500/30 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
+                  {availableSocieties.map((society) => (
+                    <button
+                      key={society.id}
+                      onClick={() => {
+                        setSelectedSociety(society.id);
+                        setShowSocietyDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 transition-all border-b border-border/30 last:border-0 text-sm flex items-center gap-2 ${
+                        selectedSociety === society.id 
+                          ? "bg-orange-500/20 text-orange-600 font-medium" 
+                          : "hover:bg-orange-500/10 text-foreground"
+                      }`}
+                    >
+                      <Building2 className="w-4 h-4 flex-shrink-0" />
+                      <div className="flex flex-col">
+                        <span>{society.name}</span>
+                        <span className="text-xs text-muted-foreground">{society.city}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          {/* Price Range Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowPriceDropdown(!showPriceDropdown);
-                setShowCityDropdown(false);
-                setShowAreaDropdown(false);
-              }}
-              className="w-full px-4 py-2.5 rounded-xl bg-card border-2 border-border hover:border-green-500/50 transition-all text-left flex items-center justify-between gap-2 text-sm font-medium text-foreground glass-card"
-            >
-              <span className="flex items-center gap-2 flex-1 truncate">
-                <DollarSign className="w-4 h-4 text-green-600 flex-shrink-0" />
-                <span className="truncate text-xs">{getPriceLabel()}</span>
-              </span>
-              <span className={`text-green-600 transition-transform ${showPriceDropdown ? "rotate-180" : ""}`}>▼</span>
-            </button>
-            
-            {showPriceDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-card border-2 border-green-500/30 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
-                {priceRanges.map((range) => (
-                  <button
-                    key={range.value}
-                    onClick={() => {
-                      setSelectedPrice(range.value);
-                      setShowPriceDropdown(false);
-                    }}
-                    className={`w-full text-left px-4 py-2.5 transition-all border-b border-border/30 last:border-0 text-sm flex items-center gap-2 ${
-                      selectedPrice === range.value 
-                        ? "bg-green-500/20 text-green-700 font-medium" 
-                        : "hover:bg-green-500/10 text-foreground"
-                    }`}
-                  >
-                    <DollarSign className="w-4 h-4 flex-shrink-0" />
-                    {range.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+            {/* Phase/Sector Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  if (selectedSociety && availablePhases.length > 0) {
+                    setShowPhaseDropdown(!showPhaseDropdown);
+                    setShowCityDropdown(false);
+                    setShowAreaDropdown(false);
+                    setShowPriceDropdown(false);
+                    setShowSocietyDropdown(false);
+                    setShowBlockDropdown(false);
+                  }
+                }}
+                disabled={!selectedSociety || availablePhases.length === 0}
+                className={`w-full px-4 py-2.5 rounded-xl border-2 transition-all text-left flex items-center justify-between gap-2 text-sm font-medium glass-card ${
+                  selectedSociety && availablePhases.length > 0
+                    ? "bg-card border-border hover:border-blue-500/50 text-foreground cursor-pointer"
+                    : "bg-muted/30 border-border/50 text-muted-foreground cursor-not-allowed opacity-50"
+                }`}
+              >
+                <span className="flex items-center gap-2 flex-1 truncate">
+                  <Layers className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                  <span className="truncate">
+                    {!selectedSociety ? "Select Society First" : selectedPhase || "Select Phase/Sector"}
+                  </span>
+                </span>
+                <span className={`text-blue-500 transition-transform ${showPhaseDropdown ? "rotate-180" : ""}`}>▼</span>
+              </button>
+              
+              {showPhaseDropdown && selectedSociety && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-card border-2 border-blue-500/30 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
+                  {availablePhases.map((phase) => (
+                    <button
+                      key={phase.name}
+                      onClick={() => {
+                        setSelectedPhase(phase.name);
+                        setShowPhaseDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 transition-all border-b border-border/30 last:border-0 text-sm flex items-center gap-2 ${
+                        selectedPhase === phase.name 
+                          ? "bg-blue-500/20 text-blue-600 font-medium" 
+                          : "hover:bg-blue-500/10 text-foreground"
+                      }`}
+                    >
+                      <Layers className="w-4 h-4 flex-shrink-0" />
+                      {phase.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          {/* Search Button */}
-          <Button
-            onClick={handleFilterSearch}
-            disabled={loading}
-            className="gap-2 bg-gradient-to-r from-primary to-accent text-primary-foreground hover:shadow-glow"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Searching...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                Search
-              </>
-            )}
-          </Button>
+            {/* Block Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  if (selectedPhase && availableBlocks.length > 0) {
+                    setShowBlockDropdown(!showBlockDropdown);
+                    setShowCityDropdown(false);
+                    setShowAreaDropdown(false);
+                    setShowPriceDropdown(false);
+                    setShowSocietyDropdown(false);
+                    setShowPhaseDropdown(false);
+                  }
+                }}
+                disabled={!selectedPhase || availableBlocks.length === 0}
+                className={`w-full px-4 py-2.5 rounded-xl border-2 transition-all text-left flex items-center justify-between gap-2 text-sm font-medium glass-card ${
+                  selectedPhase && availableBlocks.length > 0
+                    ? "bg-card border-border hover:border-purple-500/50 text-foreground cursor-pointer"
+                    : "bg-muted/30 border-border/50 text-muted-foreground cursor-not-allowed opacity-50"
+                }`}
+              >
+                <span className="flex items-center gap-2 flex-1 truncate">
+                  <MapPin className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                  <span className="truncate">
+                    {!selectedPhase ? "Select Phase First" : selectedBlock || "Select Block"}
+                  </span>
+                </span>
+                <span className={`text-purple-500 transition-transform ${showBlockDropdown ? "rotate-180" : ""}`}>▼</span>
+              </button>
+              
+              {showBlockDropdown && selectedPhase && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-card border-2 border-purple-500/30 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
+                  {availableBlocks.map((block) => (
+                    <button
+                      key={block.name}
+                      onClick={() => {
+                        setSelectedBlock(block.name);
+                        setShowBlockDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 transition-all border-b border-border/30 last:border-0 text-sm flex items-center gap-2 ${
+                        selectedBlock === block.name 
+                          ? "bg-purple-500/20 text-purple-600 font-medium" 
+                          : "hover:bg-purple-500/10 text-foreground"
+                      }`}
+                    >
+                      <MapPin className="w-4 h-4 flex-shrink-0" />
+                      {block.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Selected Society Path Display */}
+          {selectedSociety && (
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Searching in:</span>
+              <div className="flex items-center gap-1 font-medium text-orange-600">
+                <span>{getSocietyById(selectedSociety)?.name}</span>
+                {selectedPhase && (
+                  <>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-blue-600">{selectedPhase}</span>
+                  </>
+                )}
+                {selectedBlock && (
+                  <>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-purple-600">{selectedBlock}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Applied Filters Badge */}
-        {(selectedCity || selectedArea || selectedPrice) && (
-          <div className="flex flex-wrap gap-2">
+        {(selectedCity || selectedArea || selectedPrice || selectedSociety) && (
+          <div className="flex flex-wrap gap-2 pt-2">
             {selectedCity && (
               <Badge variant="secondary" className="bg-primary/20 text-primary border-primary/30">
                 🏙️ {selectedCity}
@@ -449,6 +657,46 @@ Keep each example to one line only. No markdown, no asterisks, no special format
                 💰 {getPriceLabel()}
                 <button
                   onClick={() => setSelectedPrice("")}
+                  className="ml-1 hover:opacity-70"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+            {selectedSociety && (
+              <Badge variant="secondary" className="bg-orange-500/20 text-orange-600 border-orange-500/30">
+                🏘️ {getSocietyById(selectedSociety)?.name}
+                <button
+                  onClick={() => {
+                    setSelectedSociety("");
+                    setSelectedPhase("");
+                    setSelectedBlock("");
+                  }}
+                  className="ml-1 hover:opacity-70"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+            {selectedPhase && (
+              <Badge variant="secondary" className="bg-blue-500/20 text-blue-600 border-blue-500/30">
+                📍 {selectedPhase}
+                <button
+                  onClick={() => {
+                    setSelectedPhase("");
+                    setSelectedBlock("");
+                  }}
+                  className="ml-1 hover:opacity-70"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+            {selectedBlock && (
+              <Badge variant="secondary" className="bg-purple-500/20 text-purple-600 border-purple-500/30">
+                🏠 {selectedBlock}
+                <button
+                  onClick={() => setSelectedBlock("")}
                   className="ml-1 hover:opacity-70"
                 >
                   ×
@@ -566,11 +814,14 @@ Keep each example to one line only. No markdown, no asterisks, no special format
 
           {/* Description */}
           <Card className="border-border/50">
-            <CardHeader>
-              <CardTitle className="text-lg">Area Overview</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <span className="text-xl">📍</span>
+                Area Overview
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm leading-relaxed text-muted-foreground">{result.description}</p>
+              <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-line">{result.description}</p>
             </CardContent>
           </Card>
 
@@ -758,7 +1009,15 @@ Keep each example to one line only. No markdown, no asterisks, no special format
                     <AgentCard 
                       key={agent.id} 
                       agent={agent}
-                      onViewProfile={(id) => navigate(`/agent/${id}`)}
+                      onViewProfile={(id) => {
+                        // Build URL with society filter params
+                        const filterParams = new URLSearchParams();
+                        if (selectedSociety) filterParams.append('society_id', selectedSociety);
+                        if (selectedPhase) filterParams.append('society_phase', selectedPhase);
+                        if (selectedBlock) filterParams.append('society_block', selectedBlock);
+                        const queryString = filterParams.toString();
+                        navigate(`/agent/${id}${queryString ? '?' + queryString : ''}`);
+                      }}
                     />
                   ))}
                 </div>

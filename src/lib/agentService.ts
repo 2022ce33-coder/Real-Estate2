@@ -15,6 +15,9 @@ interface DatabaseAgent {
   approved_at?: string;
   created_at?: string;
   updated_at?: string;
+  property_count?: number;
+  available_phases?: string;
+  available_blocks?: string;
 }
 
 export interface AgentData {
@@ -98,22 +101,53 @@ function generateAvatarUrl(name: string): string {
 }
 
 /**
- * Fetch agent by ID with full details
+ * Fetch agents by housing society - returns agents who have properties in the specified society
  */
-export async function fetchAgentById(agentId: string): Promise<AgentData | null> {
+export async function fetchAgentsBySociety(
+  societyId: string, 
+  phase?: string, 
+  block?: string
+): Promise<AgentData[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}/agents/${agentId}`);
+    const params = new URLSearchParams();
+    if (societyId) params.append('society_id', societyId);
+    if (phase) params.append('society_phase', phase);
+    if (block) params.append('society_block', block);
+    
+    const response = await fetch(`${API_BASE_URL}/agents/by-society?${params.toString()}`);
     
     if (!response.ok) {
-      throw new Error(`Failed to fetch agent: ${response.statusText}`);
+      throw new Error(`Failed to fetch agents by society: ${response.statusText}`);
     }
     
     const data = await response.json();
     
-    if (!data.success) {
-      return null;
+    if (!data.success || !Array.isArray(data.data)) {
+      console.warn('No agents found for society:', societyId);
+      return [];
     }
     
+    return data.data.map((agent: DatabaseAgent) => ({
+      id: agent.id,
+      name: agent.name,
+      agency: agent.agency,
+      avatar: generateAvatarUrl(agent.name),
+      experience: agent.experience,
+      properties: agent.property_count || 0, // Use actual count from query
+      rating: 4.5 + Math.random() * 0.5,
+      reviews: Math.floor(Math.random() * 300) + 50,
+      verified: true,
+      area: agent.address || societyId,
+      email: agent.email,
+      phone: agent.phone,
+    }));
+  } catch (error) {
+    console.error('Error fetching agents by society:', error);
+    return [];
+  }
+}
+
+/**
     const agent = data.data as DatabaseAgent;
     
     return {

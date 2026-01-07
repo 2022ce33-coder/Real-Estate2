@@ -1,7 +1,8 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Bytez from "bytez.js";
 
-const GEMINI_API_KEY = "AIzaSyCQ7PJ82gb_bCty38IxrFj2aXzRQ8tSJR0";
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const BYTEZ_API_KEY = "9b9fcd249b61ec762cb4314b43269e54";
+const sdk = new Bytez(BYTEZ_API_KEY);
+const model = sdk.model("google/gemini-2.5-pro");
 
 interface PropertyData {
   id: string;
@@ -194,10 +195,16 @@ export async function sendToGemini(prompt: string) {
         "\n\nProvide a natural response based on the real data shown above. Keep it to 2-3 lines max.";
       
       try {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-        const result = await model.generateContent(fullPrompt);
-        const response = await result.response;
-        let text = response.text();
+        const { error, output } = await model.run([
+          { role: "user", content: fullPrompt }
+        ]);
+        
+        if (error) {
+          console.error("Bytez processing error:", error);
+          return { text: databaseContext };
+        }
+        
+        let text = output?.content || output?.message?.content || databaseContext;
         text = formatGeminiResponse(text);
         return { text };
       } catch (geminiErr) {
@@ -210,43 +217,175 @@ export async function sendToGemini(prompt: string) {
     // No real data found, ask clarifying questions via Gemini
     const fullPrompt = conversationalContext + "\n\nUser: " + prompt;
     
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const result = await model.generateContent(fullPrompt);
-    const response = await result.response;
-    let text = response.text();
+    const { error, output } = await model.run([
+      { role: "user", content: fullPrompt }
+    ]);
+    
+    if (error) {
+      console.error("Bytez API error:", error);
+      return { text: "I'm having trouble processing your request right now. Please try again." };
+    }
+    
+    let text = output?.content || output?.message?.content || "Sorry, I couldn't process that.";
     text = formatGeminiResponse(text);
     
     return { text };
   } catch (error) {
     console.error("Gemini API error:", error);
-    
-    // Fallback: Try to return some helpful message or fetch from proxy
-    try {
-      const apiUrl = import.meta.env.VITE_GEMINI_API_URL;
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      
-      if (apiUrl && apiKey) {
-        const res = await fetch(apiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({ prompt }),
-        });
+    return { text: "I'm having trouble processing your request right now. Please try again or search using the filters above." };
+  }
+}
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.text) {
-            let formattedText = formatGeminiResponse(data.text);
-            return { text: formattedText };
-          }
-        }
-      }
-    } catch (proxyError) {
-      console.error("Proxy error:", proxyError);
+/**
+ * Send to Gemini with GENERAL mode - Web-based real estate info, market trends, area details
+ */
+export async function sendToGeminiGeneral(prompt: string) {
+  try {
+    const generalContext = `You are a knowledgeable real estate advisor for Pakistan.
+Provide general information, market insights, and area details based on web knowledge.
+Do NOT use any asterisks, bold formatting, or markdown symbols. Use plain text only.
+
+Topics you can help with:
+- Real estate market trends in Pakistan
+- Area information (schools, hospitals, parks, transport)
+- Investment advice and tips
+- Property buying/selling guidance
+- Housing society comparisons (DHA, Bahria Town, etc.)
+- Neighborhood safety and amenities
+- Legal aspects of property transactions
+
+Keep responses informative but concise (3-5 lines).
+Format information clearly with line breaks between points.
+
+User question: ${prompt}
+
+Provide a helpful, well-organized response with relevant information:`;
+
+    const { error, output } = await model.run([
+      { role: "user", content: generalContext }
+    ]);
+    
+    if (error) {
+      console.error("Bytez General API error:", error);
+      return { text: "I'm having trouble fetching general information right now. Please try again." };
     }
     
-    return { text: "I'm having trouble processing your request right now. Please try again or search using the filters above." };
+    let text = output?.content || output?.message?.content || "Sorry, I couldn't process that.";
+    text = formatGeminiResponse(text);
+    
+    return { text };
+  } catch (error) {
+    console.error("Gemini General API error:", error);
+    return { text: "I'm having trouble fetching general information right now. Please try again." };
+  }
+}
+
+/**
+ * Send to Gemini with DATABASE mode - Real properties, agents, and prices from database
+ */
+export async function sendToGeminiDatabase(prompt: string) {
+  try {
+    // Fetch real data from database
+    const extractedCity = extractCityFromPrompt(prompt);
+    const searchQuery = extractedCity || prompt;
+    
+    let databaseInfo = "";
+    let properties: PropertyData[] = [];
+    let agents: AgentData[] = [];
+    
+    // Fetch properties
+    try {
+      properties = await fetchPropertiesFromDB(searchQuery);
+    } catch (e) {
+      console.error("Error fetching properties:", e);
+    }
+    
+    // Fetch agents
+    try {
+      agents = await fetchAgentsFromDB(extractedCity || "");
+    } catch (e) {
+      console.error("Error fetching agents:", e);
+    }
+    
+    // Build database info string
+    if (properties && properties.length > 0) {
+      databaseInfo += "📍 AVAILABLE PROPERTIES:\n\n";
+      properties.slice(0, 6).forEach((prop, idx) => {
+        databaseInfo += `${idx + 1}. ${prop.title}\n`;
+        databaseInfo += `   💰 Price: PKR ${prop.price?.toLocaleString ? prop.price.toLocaleString() : prop.price}\n`;
+        if (prop.beds) databaseInfo += `   🛏️ Bedrooms: ${prop.beds}\n`;
+        if (prop.type) databaseInfo += `   🏠 Type: ${prop.type}\n`;
+        databaseInfo += `   📌 Area: ${prop.area}\n\n`;
+      });
+    }
+    
+    if (agents && agents.length > 0) {
+      databaseInfo += "👤 VERIFIED AGENTS:\n\n";
+      agents.slice(0, 5).forEach((agent, idx) => {
+        databaseInfo += `${idx + 1}. ${agent.name}\n`;
+        databaseInfo += `   🏢 Agency: ${agent.agency}\n`;
+        databaseInfo += `   📅 Experience: ${agent.experience}+ years\n`;
+        databaseInfo += `   📞 Phone: ${agent.phone}\n`;
+        databaseInfo += `   ✉️ Email: ${agent.email}\n\n`;
+      });
+    }
+    
+    if (!databaseInfo) {
+      // No data found, ask Gemini to help with suggestions
+      const noDataPrompt = `User is searching for: "${prompt}"
+      
+We don't have exact matches in our database right now. 
+Suggest what they might be looking for and ask clarifying questions.
+Keep response to 2-3 lines. Use plain text only, no markdown.`;
+      
+      const { error, output } = await model.run([
+        { role: "user", content: noDataPrompt }
+      ]);
+      
+      if (error) {
+        return { text: "No properties or agents found matching your search. Try searching for a different area or property type." };
+      }
+      
+      let text = output?.content || output?.message?.content || "No results found. Try a different search.";
+      text = formatGeminiResponse(text);
+      return { text };
+    }
+    
+    // Format the database results with Gemini
+    const databasePrompt = `You are a real estate assistant. Present this REAL database information to the user in a friendly way.
+Do NOT use asterisks or markdown. Keep it clean and readable.
+
+User asked: "${prompt}"
+
+Database Results:
+${databaseInfo}
+
+Summarize the key findings in 2-3 lines, then show the actual listings/agents.
+If there are properties, highlight the best options.
+If there are agents, recommend contacting them for more listings.`;
+
+    try {
+      const { error, output } = await model.run([
+        { role: "user", content: databasePrompt }
+      ]);
+      
+      if (error) {
+        return { text: "Here's what I found in our database:\n\n" + databaseInfo };
+      }
+      
+      let text = output?.content || output?.message?.content || "";
+      text = formatGeminiResponse(text);
+      
+      // Append the actual database info
+      text += "\n\n" + databaseInfo;
+      
+      return { text };
+    } catch (geminiErr) {
+      // If Gemini fails, just return the raw database info
+      return { text: "Here's what I found in our database:\n\n" + databaseInfo };
+    }
+  } catch (error) {
+    console.error("Gemini Database API error:", error);
+    return { text: "I'm having trouble accessing the database right now. Please try again or use the property search filters." };
   }
 }

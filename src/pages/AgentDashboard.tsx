@@ -7,6 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SocietySelector } from "@/components/properties/SocietySelector";
+import { getFullLocationString, getSocietyById } from "@/lib/housingSocieties";
+import { LiveChat, ChatToggleButton } from "@/components/chat/LiveChat";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line
@@ -14,7 +17,7 @@ import {
 import {
   Home, Plus, Edit2, Trash2, Eye, MapPin, DollarSign, Users,
   TrendingUp, AlertCircle, CheckCircle, Clock, FileText, Phone, Mail,
-  Building2, Award, Briefcase
+  Building2, Award, Briefcase, MessageCircle
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -94,6 +97,10 @@ interface Property {
   created_at?: string;
   latitude?: number;
   longitude?: number;
+  // Housing Society fields
+  society_id?: string;
+  society_phase?: string;
+  society_block?: string;
 }
 
 const AgentDashboard = () => {
@@ -109,6 +116,8 @@ const AgentDashboard = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<File[]>([]);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [stats, setStats] = useState({
     totalProperties: 0,
     activeListings: 0,
@@ -133,7 +142,10 @@ const AgentDashboard = () => {
     status: "available",
     featured: false,
     latitude: undefined,
-    longitude: undefined
+    longitude: undefined,
+    society_id: "",
+    society_phase: "",
+    society_block: ""
   });
 
   // Check authentication and fetch agent data
@@ -154,11 +166,39 @@ const AgentDashboard = () => {
       }
       setAgent(parsedUser);
       fetchAgentProperties(parsedUser.id, token);
+      fetchUnreadCount(parsedUser.id);
     } catch (error) {
       console.error("Error parsing user data:", error);
       navigate("/login");
     }
   }, [navigate]);
+
+  // Fetch unread message count
+  const fetchUnreadCount = async (agentId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(
+        `http://localhost:3001/api/chat/unread-count?userId=${agentId}&userType=agent`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await response.json();
+      if (data.success) {
+        setUnreadCount(data.count);
+      }
+    } catch (error) {
+      console.error("Error fetching unread count:", error);
+    }
+  };
+
+  // Poll for unread messages
+  useEffect(() => {
+    if (agent) {
+      const interval = setInterval(() => {
+        fetchUnreadCount(agent.id);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [agent]);
 
   const fetchAgentProperties = async (agentId: string, token: string) => {
     try {
@@ -289,7 +329,10 @@ const AgentDashboard = () => {
           status: "available",
           featured: false,
           latitude: undefined,
-          longitude: undefined
+          longitude: undefined,
+          society_id: "",
+          society_phase: "",
+          society_block: ""
         });
         setSelectedAmenities([]);
         setUploadedImages([]);
@@ -623,7 +666,10 @@ const AgentDashboard = () => {
                     zip_code: "",
                     images: [],
                     status: "available",
-                    featured: false
+                    featured: false,
+                    society_id: "",
+                    society_phase: "",
+                    society_block: ""
                   }); }}>
                     <Plus className="w-4 h-4" />
                     Add Property
@@ -796,29 +842,31 @@ const AgentDashboard = () => {
                       </div>
                     </div>
 
-                    {/* Bedrooms & Bathrooms */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-2">Bedrooms *</label>
-                        <Input
-                          type="number"
-                          placeholder="0"
-                          value={formData.bedrooms || ""}
-                          onChange={(e) => setFormData({ ...formData, bedrooms: Number(e.target.value) })}
-                          required
-                        />
+                    {/* Bedrooms & Bathrooms - Hidden for land property type */}
+                    {formData.property_type !== "land" && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Bedrooms *</label>
+                          <Input
+                            type="number"
+                            placeholder="0"
+                            value={formData.bedrooms || ""}
+                            onChange={(e) => setFormData({ ...formData, bedrooms: Number(e.target.value) })}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Bathrooms *</label>
+                          <Input
+                            type="number"
+                            placeholder="0"
+                            value={formData.bathrooms || ""}
+                            onChange={(e) => setFormData({ ...formData, bathrooms: Number(e.target.value) })}
+                            required
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-2">Bathrooms *</label>
-                        <Input
-                          type="number"
-                          placeholder="0"
-                          value={formData.bathrooms || ""}
-                          onChange={(e) => setFormData({ ...formData, bathrooms: Number(e.target.value) })}
-                          required
-                        />
-                      </div>
-                    </div>
+                    )}
 
                     {/* Area */}
                     <div>
@@ -895,6 +943,34 @@ const AgentDashboard = () => {
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+
+                    {/* Housing Society Selection */}
+                    <div className="p-4 border rounded-lg bg-muted/30">
+                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Building2 className="w-4 h-4" />
+                        Housing Society (Optional)
+                      </h4>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        If this property is located in a housing society, select it below for better searchability.
+                      </p>
+                      <SocietySelector
+                        city={formData.city}
+                        value={{
+                          societyId: formData.society_id || "",
+                          phase: formData.society_phase || "",
+                          block: formData.society_block || ""
+                        }}
+                        onChange={(societyData) => {
+                          setFormData({
+                            ...formData,
+                            society_id: societyData.societyId,
+                            society_phase: societyData.phase,
+                            society_block: societyData.block
+                          });
+                        }}
+                        showLabels={true}
+                      />
                     </div>
 
                     {/* Zip Code */}
@@ -1083,6 +1159,28 @@ const AgentDashboard = () => {
           </div>
         </div>
       </main>
+
+      {/* Live Chat */}
+      {agent && (
+        <>
+          {!isChatOpen && (
+            <ChatToggleButton 
+              onClick={() => setIsChatOpen(true)} 
+              unreadCount={unreadCount}
+            />
+          )}
+          <LiveChat
+            currentUserId={agent.id}
+            currentUserName={agent.name}
+            currentUserType="agent"
+            isOpen={isChatOpen}
+            onClose={() => {
+              setIsChatOpen(false);
+              fetchUnreadCount(agent.id);
+            }}
+          />
+        </>
+      )}
 
       <Footer />
     </div>

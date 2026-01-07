@@ -1,0 +1,106 @@
+=====================================================
+         AURA HOME - TECHNOLOGY STACK OVERVIEW
+=====================================================
+
+-----------------------------------------------------
+FRONTEND
+-----------------------------------------------------
+Technology              Version         Purpose
+-----------------------------------------------------
+React                   18.3.1          UI library
+TypeScript              5.8.3           Type-safe JavaScript
+Vite                    5.4.19          Build tool & dev server
+React Router DOM        6.30.1          Client-side routing
+TailwindCSS             3.4.17          Utility-first CSS framework
+shadcn/ui               (Radix-based)   Component library
+Lucide React            0.462.0         Icon library
+Recharts                2.15.4          Charts & data visualization
+
+-----------------------------------------------------
+UI COMPONENTS (Radix UI Primitives)
+-----------------------------------------------------
+- Accordion
+- Alert Dialog
+- Aspect Ratio
+- Avatar
+- Checkbox
+- Collapsible
+- Context Menu
+- Dialog
+- Dropdown Menu
+- Hover Card
+- Label
+- Menubar
+- Navigation Menu
+- Popover
+- Progress
+- Radio Group
+- Scroll Area
+- Select
+- Separator
+- Slider
+- Switch
+- Tabs
+- Toast
+- Toggle
+- Toggle Group
+- Tooltip
+
+-----------------------------------------------------
+BACKEND
+-----------------------------------------------------
+Technology              Version         Purpose
+-----------------------------------------------------
+Node.js + Express       4.18.2          REST API server
+MySQL                   mysql2 3.6.5    Relational database
+bcrypt                  5.1.0           Password hashing
+jsonwebtoken (JWT)      9.0.2           Authentication tokens
+CORS                    2.8.5           Cross-origin resource sharing
+UUID                    9.0.1           Unique ID generation
+
+-----------------------------------------------------
+AI / INTEGRATIONS
+-----------------------------------------------------
+Technology                              Purpose
+-----------------------------------------------------
+Google Generative AI (Gemini)           AI chatbot integration
+Supabase                                Backend-as-a-Service (auth, realtime, storage)
+
+-----------------------------------------------------
+STATE & DATA MANAGEMENT
+-----------------------------------------------------
+Technology              Version         Purpose
+-----------------------------------------------------
+TanStack React Query    5.83.0          Server state management & caching
+React Hook Form         7.61.1          Form handling
+Zod                     3.25.76         Schema validation
+
+-----------------------------------------------------
+DEV TOOLS
+-----------------------------------------------------
+Tool                                    Purpose
+-----------------------------------------------------
+ESLint                                  Code linting
+Nodemon                                 Auto-restart server on changes
+PostCSS + Autoprefixer                  CSS processing
+Bun                                     Package manager
+SWC                                     Fast TypeScript/JSX compiler
+
+-----------------------------------------------------
+PROJECT STRUCTURE
+-----------------------------------------------------
+src/           React frontend code (pages, components, hooks, integrations)
+server.js      Express backend API with MySQL
+public/        Static assets
+docs/          Documentation
+
+-----------------------------------------------------
+SUMMARY
+-----------------------------------------------------
+This is a full-stack real estate application with:
+- React/TypeScript frontend
+- Express/MySQL backend
+- AI-powered chat (Gemini)
+- Modern UI components via shadcn/ui
+
+=====================================================

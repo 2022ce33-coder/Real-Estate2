@@ -16,7 +16,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // MySQL connection pool
 const pool = mysql.createPool({
-  host: '38.64.138.147',
+  host: '216.106.180.123',
   user: 'webdevco_realuser',
   password: 'adeel@490A',
   database: 'webdevco_real',
@@ -447,6 +447,119 @@ app.post('/api/agent-applications/:id/reject', async (req, res) => {
 
 // ============== AGENTS ENDPOINTS ==============
 
+// Search agents by housing society - MUST be before /:id route
+// Searches in properties table for society_id, society_phase, society_block fields
+app.get('/api/agents/by-society', async (req, res) => {
+  try {
+    const { society_id, society_phase, society_block } = req.query;
+    const connection = await pool.getConnection();
+    
+    console.log('Society search params:', { society_id, society_phase, society_block });
+    
+    // Map society_id to search keywords
+    const societyKeywords = {
+      '1': ['DHA', 'Defence', 'Defense', 'DHA Lahore'],
+      'dha-karachi': ['DHA', 'Defence', 'Defense', 'DHA Karachi'],
+      'dha-islamabad': ['DHA', 'Defence', 'Defense', 'DHA Islamabad'],
+      'bahria-town-lahore': ['Bahria Town', 'Bahria'],
+      'bahria-town-karachi': ['Bahria Town', 'Bahria'],
+      'bahria-town-islamabad': ['Bahria Town', 'Bahria'],
+      'lake-city-lahore': ['Lake City'],
+      'lda-city-lahore': ['LDA City', 'LDA'],
+      'gulberg-lahore': ['Gulberg'],
+      'model-town-lahore': ['Model Town'],
+      'johar-town-lahore': ['Johar Town'],
+      'al-kabir-town-lahore': ['Al Kabir', 'Al-Kabir', 'Alkabir'],
+    };
+    
+    let sql;
+    let params = [];
+    
+    // If phase or block is specified, do strict filtering
+    if (society_phase || society_block) {
+      let whereConditions = [];
+      
+      if (society_id) {
+        whereConditions.push(`LOWER(p.society_id) = LOWER(?)`);
+        params.push(society_id);
+      }
+      if (society_phase) {
+        whereConditions.push(`LOWER(p.society_phase) = LOWER(?)`);
+        params.push(society_phase);
+      }
+      if (society_block) {
+        whereConditions.push(`LOWER(p.society_block) = LOWER(?)`);
+        params.push(society_block);
+      }
+      
+      sql = `
+        SELECT DISTINCT a.*, 
+          COUNT(DISTINCT p.id) as property_count,
+          GROUP_CONCAT(DISTINCT p.society_phase) as available_phases,
+          GROUP_CONCAT(DISTINCT p.society_block) as available_blocks
+        FROM agents a 
+        INNER JOIN properties p ON a.id = p.agent_id 
+        WHERE ${whereConditions.join(' AND ')}
+        GROUP BY a.id 
+        ORDER BY property_count DESC, a.created_at DESC
+        LIMIT 50
+      `;
+    } else if (society_id) {
+      // Only society is specified - search broadly in society_id, title, and address
+      const keywords = societyKeywords[society_id] || [society_id.replace(/-/g, ' ')];
+      
+      let searchConditions = [];
+      
+      // Match exact society_id
+      searchConditions.push(`LOWER(p.society_id) = LOWER(?)`);
+      params.push(society_id);
+      
+      // Also match keywords in title and address
+      keywords.forEach(keyword => {
+        searchConditions.push(`LOWER(p.title) LIKE LOWER(?)`);
+        params.push(`%${keyword}%`);
+        searchConditions.push(`LOWER(p.address) LIKE LOWER(?)`);
+        params.push(`%${keyword}%`);
+      });
+      
+      sql = `
+        SELECT DISTINCT a.*, 
+          COUNT(DISTINCT p.id) as property_count,
+          GROUP_CONCAT(DISTINCT p.society_phase) as available_phases,
+          GROUP_CONCAT(DISTINCT p.society_block) as available_blocks
+        FROM agents a 
+        INNER JOIN properties p ON a.id = p.agent_id 
+        WHERE (${searchConditions.join(' OR ')})
+        GROUP BY a.id 
+        ORDER BY property_count DESC, a.created_at DESC
+        LIMIT 50
+      `;
+    } else {
+      // No filters - return top agents with properties
+      sql = `
+        SELECT DISTINCT a.*, COUNT(DISTINCT p.id) as property_count
+        FROM agents a 
+        INNER JOIN properties p ON a.id = p.agent_id
+        GROUP BY a.id
+        ORDER BY property_count DESC, a.created_at DESC
+        LIMIT 20
+      `;
+    }
+    
+    console.log('Executing SQL:', sql);
+    console.log('With params:', params);
+    
+    const [rows] = await connection.query(sql, params);
+    console.log('Search found:', rows.length, 'agents');
+    
+    connection.release();
+    res.json({ success: true, data: rows || [] });
+  } catch (error) {
+    console.error('Society search error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Get agent by ID
 app.get('/api/agents/:id', async (req, res) => {
   try {
@@ -482,49 +595,33 @@ app.get('/api/agents/city/:city', async (req, res) => {
   }
 });
 
-// Search agents by area with flexible matching
+// Search agents by area with STRICT matching - show only agents from the EXACT area entered
 app.get('/api/agents/search/:query', async (req, res) => {
   try {
     const connection = await pool.getConnection();
-    const query = req.params.query.toLowerCase();
+    const query = req.params.query.toLowerCase().trim();
     const searchTerm = `%${query}%`;
     
-    // Parse the search query to extract keywords
-    const keywords = query.split(' ').filter(k => k.length > 0);
-    
-    // Build a flexible search that matches:
-    // 1. Agents with properties in the searched city/area
-    // 2. Agents whose address/agency contains search terms
-    // 3. Agents with properties matching property type/description
-    // 4. Agents with properties in the right area (partial matching on city)
-    
-    let whereConditions = [];
-    let params = [];
-    
-    // Add city/area matching for each keyword (common in "5 marla house in lahore" queries)
-    for (const keyword of keywords) {
-      if (keyword.length > 2) {
-        whereConditions.push(`(p.city LIKE ? OR a.address LIKE ?)`);
-        params.push(`%${keyword}%`, `%${keyword}%`);
-      }
-    }
-    
-    // Add agent name/agency matching
-    whereConditions.push(`(a.name LIKE ? OR a.agency LIKE ?)`);
-    params.push(searchTerm, searchTerm);
-    
-    // Add property type/title matching
-    whereConditions.push(`(p.property_type LIKE ? OR p.title LIKE ? OR p.description LIKE ?)`);
-    params.push(searchTerm, searchTerm, searchTerm);
-    
-    const whereClause = whereConditions.map(c => `(${c})`).join(' OR ');
+    // ALWAYS use STRICT matching: Agent's address must contain the FULL search text
+    // This ensures whatever user types, only agents from that SPECIFIC area are shown
+    // e.g., "DHA Lahore Phase 1" only returns Phase 1 agents, not all DHA Lahore agents
+    // e.g., "Bahria Town" only returns Bahria Town agents, not mixing with other areas
     
     const sql = `
       SELECT DISTINCT a.* FROM agents a 
       LEFT JOIN properties p ON a.id = p.agent_id 
-      WHERE ${whereClause}
-      ORDER BY a.created_at DESC
+      WHERE LOWER(a.address) LIKE ?
+         OR LOWER(p.city) LIKE ?
+         OR LOWER(p.title) LIKE ?
+      ORDER BY 
+        CASE 
+          WHEN LOWER(a.address) LIKE ? THEN 1
+          WHEN LOWER(p.city) LIKE ? THEN 2
+          ELSE 3
+        END,
+        a.created_at DESC
     `;
+    const params = [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm];
     
     const [rows] = await connection.query(sql, params);
     
@@ -592,12 +689,74 @@ app.get('/api/agents/by-property/:query', async (req, res) => {
   }
 });
 
+// Debug endpoint to check properties with society data
+app.get('/api/debug/properties-with-society', async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    const [rows] = await connection.query(`
+      SELECT id, title, society_id, society_phase, society_block, agent_id 
+      FROM properties 
+      WHERE society_id IS NOT NULL OR society_phase IS NOT NULL OR society_block IS NOT NULL
+    `);
+    connection.release();
+    res.json({ success: true, data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Search properties by housing society
+app.get('/api/properties/by-society', async (req, res) => {
+  try {
+    const { society_id, society_phase, society_block, type, minPrice, maxPrice } = req.query;
+    const connection = await pool.getConnection();
+    
+    let sql = 'SELECT * FROM properties WHERE society_id IS NOT NULL';
+    let params = [];
+    
+    if (society_id) {
+      sql += ' AND society_id = ?';
+      params.push(society_id);
+    }
+    if (society_phase) {
+      sql += ' AND society_phase = ?';
+      params.push(society_phase);
+    }
+    if (society_block) {
+      sql += ' AND society_block = ?';
+      params.push(society_block);
+    }
+    if (type) {
+      sql += ' AND property_type = ?';
+      params.push(type);
+    }
+    if (minPrice) {
+      sql += ' AND price >= ?';
+      params.push(minPrice);
+    }
+    if (maxPrice) {
+      sql += ' AND price <= ?';
+      params.push(maxPrice);
+    }
+    
+    sql += ' ORDER BY created_at DESC';
+    
+    const [rows] = await connection.query(sql, params);
+    
+    connection.release();
+    res.json({ success: true, data: rows || [] });
+  } catch (error) {
+    console.error('Society property search error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ============== PROPERTIES ENDPOINTS ==============
 
 // Get all properties
 app.get('/api/properties', async (req, res) => {
   try {
-    const { city, type, status, minPrice, maxPrice } = req.query;
+    const { city, type, status, minPrice, maxPrice, society_id, society_phase, society_block } = req.query;
     let query = 'SELECT * FROM properties WHERE 1=1';
     const params = [];
 
@@ -620,6 +779,19 @@ app.get('/api/properties', async (req, res) => {
     if (maxPrice) {
       query += ' AND price <= ?';
       params.push(maxPrice);
+    }
+    // Housing society filters
+    if (society_id) {
+      query += ' AND society_id = ?';
+      params.push(society_id);
+    }
+    if (society_phase) {
+      query += ' AND society_phase = ?';
+      params.push(society_phase);
+    }
+    if (society_block) {
+      query += ' AND society_block = ?';
+      params.push(society_block);
     }
 
     query += ' ORDER BY created_at DESC';
@@ -677,16 +849,16 @@ app.get('/api/properties/featured/true', async (req, res) => {
 // Create property
 app.post('/api/properties', verifyToken, async (req, res) => {
   try {
-    const { title, description, price, property_type, type, bedrooms, bathrooms, area_sqft, address, location, city, state, zip_code, latitude, longitude, images, agent_id, status, featured, amenities, user_id } = req.body;
+    const { title, description, price, property_type, type, bedrooms, bathrooms, area_sqft, address, location, city, state, zip_code, latitude, longitude, images, agent_id, status, featured, amenities, user_id, society_id, society_phase, society_block } = req.body;
     const propertyType = property_type || type || 'Apartment';
     const connection = await pool.getConnection();
     const propertyId = uuidv4();
     
-    // Build the INSERT query with available columns
+    // Build the INSERT query with available columns including society fields
     const insertQuery = `
       INSERT INTO properties 
-      (id, title, description, price, property_type, bedrooms, bathrooms, area_sqft, address, city, state, zip_code, latitude, longitude, images, agent_id, status, featured, created_at, updated_at, amenities) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, title, description, price, property_type, bedrooms, bathrooms, area_sqft, address, city, state, zip_code, latitude, longitude, images, agent_id, status, featured, created_at, updated_at, amenities, society_id, society_phase, society_block) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
     await connection.query(insertQuery, [
@@ -710,7 +882,10 @@ app.post('/api/properties', verifyToken, async (req, res) => {
       featured || false,
       null, // created_at
       null, // updated_at
-      amenities ? JSON.stringify(amenities) : null
+      amenities ? JSON.stringify(amenities) : null,
+      society_id || null,
+      society_phase || null,
+      society_block || null
     ]);
     connection.release();
     res.status(201).json({ success: true, message: 'Property created', id: propertyId });
@@ -723,13 +898,13 @@ app.post('/api/properties', verifyToken, async (req, res) => {
 // Update property
 app.put('/api/properties/:id', verifyToken, async (req, res) => {
   try {
-    const { title, description, price, property_type, type, bedrooms, bathrooms, area_sqft, address, location, city, state, zip_code, latitude, longitude, images, status, featured, amenities } = req.body;
+    const { title, description, price, property_type, type, bedrooms, bathrooms, area_sqft, address, location, city, state, zip_code, latitude, longitude, images, status, featured, amenities, society_id, society_phase, society_block } = req.body;
     const propertyType = property_type || type || 'Apartment';
     const connection = await pool.getConnection();
     
     const updateQuery = `
       UPDATE properties 
-      SET title = ?, description = ?, price = ?, property_type = ?, bedrooms = ?, bathrooms = ?, area_sqft = ?, address = ?, city = ?, state = ?, zip_code = ?, latitude = ?, longitude = ?, images = ?, amenities = ?, status = ?, featured = ?, updated_at = NOW() 
+      SET title = ?, description = ?, price = ?, property_type = ?, bedrooms = ?, bathrooms = ?, area_sqft = ?, address = ?, city = ?, state = ?, zip_code = ?, latitude = ?, longitude = ?, images = ?, amenities = ?, status = ?, featured = ?, society_id = ?, society_phase = ?, society_block = ?, updated_at = NOW() 
       WHERE id = ?
     `;
     
@@ -750,7 +925,10 @@ app.put('/api/properties/:id', verifyToken, async (req, res) => {
       images ? JSON.stringify(images) : null,
       amenities ? JSON.stringify(amenities) : null,
       status, 
-      featured, 
+      featured,
+      society_id || null,
+      society_phase || null,
+      society_block || null,
       req.params.id
     ]);
     connection.release();
@@ -772,11 +950,23 @@ app.delete('/api/properties/:id', verifyToken, async (req, res) => {
   }
 });
 
+// Get all users (for agents to start chat)
+app.get('/api/users', verifyToken, async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    const [rows] = await connection.query('SELECT id, name, email, phone, created_at FROM users ORDER BY created_at DESC');
+    connection.release();
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Get all agents
 app.get('/api/agents', async (req, res) => {
   try {
     const connection = await pool.getConnection();
-    const [rows] = await connection.query('SELECT * FROM agents ORDER BY created_at DESC');
+    const [rows] = await connection.query('SELECT id, name, email, phone, agency, experience, cnic, address, attachments, created_at FROM agents ORDER BY created_at DESC');
     connection.release();
     res.json({ success: true, data: rows });
   } catch (error) {
@@ -788,7 +978,7 @@ app.get('/api/agents', async (req, res) => {
 app.get('/api/agents/:agentId', async (req, res) => {
   try {
     const connection = await pool.getConnection();
-    const [rows] = await connection.query('SELECT * FROM agents WHERE id = ?', [req.params.agentId]);
+    const [rows] = await connection.query('SELECT id, name, email, phone, agency, experience, cnic, address, attachments, created_at FROM agents WHERE id = ?', [req.params.agentId]);
     connection.release();
     
     if (rows.length > 0) {
@@ -801,14 +991,47 @@ app.get('/api/agents/:agentId', async (req, res) => {
   }
 });
 
-// Get properties by agent ID
+// Get properties by agent ID with optional society filter
 app.get('/api/agents/:agentId/properties', async (req, res) => {
   try {
+    const { society_id, society_phase, society_block } = req.query;
     const connection = await pool.getConnection();
-    const [rows] = await connection.query('SELECT * FROM properties WHERE agent_id = ? ORDER BY created_at DESC', [req.params.agentId]);
+    
+    console.log('=== Agent Properties Request ===');
+    console.log('Agent ID:', req.params.agentId);
+    console.log('Filters:', { society_id, society_phase, society_block });
+    
+    let sql = 'SELECT * FROM properties WHERE agent_id = ?';
+    let params = [req.params.agentId];
+    
+    // Add society filters if provided - strict matching
+    if (society_id) {
+      sql += ' AND LOWER(society_id) = LOWER(?)';
+      params.push(society_id);
+    }
+    if (society_phase) {
+      sql += ' AND LOWER(society_phase) = LOWER(?)';
+      params.push(society_phase);
+    }
+    if (society_block) {
+      sql += ' AND LOWER(society_block) = LOWER(?)';
+      params.push(society_block);
+    }
+    
+    sql += ' ORDER BY created_at DESC';
+    
+    console.log('SQL:', sql);
+    console.log('Params:', params);
+    
+    const [rows] = await connection.query(sql, params);
+    
+    console.log('Found properties:', rows.length);
+    rows.forEach(r => console.log(`  - ${r.title} | society_id: ${r.society_id} | phase: ${r.society_phase} | block: ${r.society_block}`));
+    
     connection.release();
     res.json({ success: true, data: rows });
   } catch (error) {
+    console.error('Error fetching agent properties:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -1122,6 +1345,262 @@ app.get('/api/properties/user/:userId', verifyToken, async (req, res) => {
     connection.release();
     res.json({ success: true, data: rows });
   } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============== LIVE CHAT ENDPOINTS ==============
+
+// Create chat_conversations table if not exists
+const initChatTables = async () => {
+  try {
+    const connection = await pool.getConnection();
+    
+    // Create conversations table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS chat_conversations (
+        id CHAR(36) PRIMARY KEY,
+        user_id CHAR(36) NOT NULL,
+        user_name VARCHAR(255) NOT NULL,
+        user_email VARCHAR(255),
+        agent_id CHAR(36) NOT NULL,
+        agent_name VARCHAR(255) NOT NULL,
+        agent_email VARCHAR(255),
+        agent_phone VARCHAR(50),
+        agent_agency VARCHAR(255),
+        last_message TEXT,
+        last_message_time TIMESTAMP NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Create messages table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id CHAR(36) PRIMARY KEY,
+        conversation_id CHAR(36) NOT NULL,
+        sender_id CHAR(36) NOT NULL,
+        sender_type ENUM('user', 'agent') NOT NULL,
+        sender_name VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        read_status BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE
+      )
+    `);
+    
+    connection.release();
+    console.log('✓ Chat tables initialized successfully');
+  } catch (error) {
+    console.error('Error initializing chat tables:', error.message);
+  }
+};
+
+// Initialize chat tables on server start
+initChatTables();
+
+// Get conversations for a user or agent
+app.get('/api/chat/conversations', verifyToken, async (req, res) => {
+  try {
+    const { userId, userType } = req.query;
+    
+    if (!userId || !userType) {
+      return res.status(400).json({ success: false, error: 'userId and userType are required' });
+    }
+    
+    const connection = await pool.getConnection();
+    
+    let query;
+    if (userType === 'user') {
+      query = `
+        SELECT c.*, 
+          (SELECT COUNT(*) FROM chat_messages m WHERE m.conversation_id = c.id AND m.read_status = false AND m.sender_type = 'agent') as unread_count
+        FROM chat_conversations c 
+        WHERE c.user_id = ? 
+        ORDER BY c.last_message_time DESC, c.created_at DESC
+      `;
+    } else {
+      query = `
+        SELECT c.*, 
+          (SELECT COUNT(*) FROM chat_messages m WHERE m.conversation_id = c.id AND m.read_status = false AND m.sender_type = 'user') as unread_count
+        FROM chat_conversations c 
+        WHERE c.agent_id = ? 
+        ORDER BY c.last_message_time DESC, c.created_at DESC
+      `;
+    }
+    
+    const [rows] = await connection.query(query, [userId]);
+    connection.release();
+    
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Create a new conversation
+app.post('/api/chat/conversations', verifyToken, async (req, res) => {
+  try {
+    const { userId, userName, userEmail, agentId, agentName, agentEmail, agentPhone, agentAgency } = req.body;
+    
+    if (!userId || !agentId) {
+      return res.status(400).json({ success: false, error: 'userId and agentId are required' });
+    }
+    
+    const connection = await pool.getConnection();
+    
+    // Check if conversation already exists
+    const [existing] = await connection.query(
+      'SELECT * FROM chat_conversations WHERE user_id = ? AND agent_id = ?',
+      [userId, agentId]
+    );
+    
+    if (existing.length > 0) {
+      connection.release();
+      return res.json({ success: true, data: existing[0], existing: true });
+    }
+    
+    // Create new conversation
+    const conversationId = uuidv4();
+    await connection.query(
+      `INSERT INTO chat_conversations 
+        (id, user_id, user_name, user_email, agent_id, agent_name, agent_email, agent_phone, agent_agency) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [conversationId, userId, userName, userEmail, agentId, agentName, agentEmail, agentPhone, agentAgency]
+    );
+    
+    const [newConversation] = await connection.query(
+      'SELECT * FROM chat_conversations WHERE id = ?',
+      [conversationId]
+    );
+    
+    connection.release();
+    res.json({ success: true, data: newConversation[0] });
+  } catch (error) {
+    console.error('Error creating conversation:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get messages for a conversation
+app.get('/api/chat/messages/:conversationId', verifyToken, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    
+    const connection = await pool.getConnection();
+    const [rows] = await connection.query(
+      'SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY created_at ASC',
+      [conversationId]
+    );
+    connection.release();
+    
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Send a new message
+app.post('/api/chat/messages', verifyToken, async (req, res) => {
+  try {
+    const { conversationId, senderId, senderType, senderName, message } = req.body;
+    
+    if (!conversationId || !senderId || !senderType || !message) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    const connection = await pool.getConnection();
+    
+    const messageId = uuidv4();
+    await connection.query(
+      `INSERT INTO chat_messages (id, conversation_id, sender_id, sender_type, sender_name, message) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [messageId, conversationId, senderId, senderType, senderName, message]
+    );
+    
+    // Update conversation's last message
+    await connection.query(
+      `UPDATE chat_conversations 
+       SET last_message = ?, last_message_time = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [message.substring(0, 100), conversationId]
+    );
+    
+    const [newMessage] = await connection.query(
+      'SELECT * FROM chat_messages WHERE id = ?',
+      [messageId]
+    );
+    
+    connection.release();
+    res.json({ success: true, data: newMessage[0] });
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Mark messages as read
+app.put('/api/chat/messages/:conversationId/read', verifyToken, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { readerId, readerType } = req.body;
+    
+    const connection = await pool.getConnection();
+    
+    // Mark messages from the other party as read
+    const senderType = readerType === 'user' ? 'agent' : 'user';
+    await connection.query(
+      `UPDATE chat_messages 
+       SET read_status = true 
+       WHERE conversation_id = ? AND sender_type = ? AND read_status = false`,
+      [conversationId, senderType]
+    );
+    
+    connection.release();
+    res.json({ success: true, message: 'Messages marked as read' });
+  } catch (error) {
+    console.error('Error marking messages as read:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get unread message count for a user
+app.get('/api/chat/unread-count', verifyToken, async (req, res) => {
+  try {
+    const { userId, userType } = req.query;
+    
+    if (!userId || !userType) {
+      return res.status(400).json({ success: false, error: 'userId and userType are required' });
+    }
+    
+    const connection = await pool.getConnection();
+    
+    let query;
+    if (userType === 'user') {
+      query = `
+        SELECT COUNT(*) as count 
+        FROM chat_messages m 
+        JOIN chat_conversations c ON m.conversation_id = c.id 
+        WHERE c.user_id = ? AND m.sender_type = 'agent' AND m.read_status = false
+      `;
+    } else {
+      query = `
+        SELECT COUNT(*) as count 
+        FROM chat_messages m 
+        JOIN chat_conversations c ON m.conversation_id = c.id 
+        WHERE c.agent_id = ? AND m.sender_type = 'user' AND m.read_status = false
+      `;
+    }
+    
+    const [rows] = await connection.query(query, [userId]);
+    connection.release();
+    
+    res.json({ success: true, count: rows[0].count });
+  } catch (error) {
+    console.error('Error fetching unread count:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

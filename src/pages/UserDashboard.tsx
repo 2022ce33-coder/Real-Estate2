@@ -7,8 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Edit2, Trash2, Eye, Home } from "lucide-react";
+import { Plus, Edit2, Trash2, Eye, Home, MessageCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LiveChat, ChatToggleButton } from "@/components/chat/LiveChat";
 
 interface Property {
   id: string;
@@ -67,6 +68,8 @@ export default function UserDashboard() {
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [formData, setFormData] = useState({
     title: "",
     price: "",
@@ -94,7 +97,35 @@ export default function UserDashboard() {
     const parsedUser = JSON.parse(userData);
     setUser(parsedUser);
     fetchUserProperties(parsedUser.id);
+    fetchUnreadCount(parsedUser.id);
   }, [navigate]);
+
+  // Fetch unread message count
+  const fetchUnreadCount = async (userId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(
+        `http://localhost:3001/api/chat/unread-count?userId=${userId}&userType=user`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await response.json();
+      if (data.success) {
+        setUnreadCount(data.count);
+      }
+    } catch (error) {
+      console.error("Error fetching unread count:", error);
+    }
+  };
+
+  // Poll for unread messages
+  useEffect(() => {
+    if (user) {
+      const interval = setInterval(() => {
+        fetchUnreadCount(user.id);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   const fetchUserProperties = async (userId: string) => {
     try {
@@ -491,6 +522,28 @@ export default function UserDashboard() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Live Chat */}
+      {user && (
+        <>
+          {!isChatOpen && (
+            <ChatToggleButton 
+              onClick={() => setIsChatOpen(true)} 
+              unreadCount={unreadCount}
+            />
+          )}
+          <LiveChat
+            currentUserId={user.id}
+            currentUserName={user.name}
+            currentUserType="user"
+            isOpen={isChatOpen}
+            onClose={() => {
+              setIsChatOpen(false);
+              fetchUnreadCount(user.id);
+            }}
+          />
+        </>
+      )}
 
       <Footer />
     </div>

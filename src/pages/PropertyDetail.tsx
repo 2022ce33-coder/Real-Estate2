@@ -141,12 +141,19 @@ export default function PropertyDetail() {
     <div className="min-h-screen bg-background">
       <Navbar />
 
-      <div className="container mx-auto px-4 py-8">
-        {/* Back Button */}
-        <Button variant="ghost" onClick={() => navigate(-1)} className="mb-6 gap-2">
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Button>
+      <div className="container mx-auto px-4 py-8 pt-24">
+        {/* Back Buttons */}
+        <div className="flex items-center gap-3 mb-6">
+          <Button variant="ghost" onClick={() => navigate(-1)} className="gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+          {property?.agent_id && (
+            <Button variant="outline" onClick={() => navigate(`/agent/${property.agent_id}`)} className="gap-2">
+              View Agent Profile
+            </Button>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Content */}

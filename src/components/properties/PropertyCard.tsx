@@ -19,6 +19,10 @@ export interface Property {
   agentName?: string;
   agentVerified?: boolean;
   featured?: boolean;
+  societyId?: string;
+  societyPhase?: string;
+  societyBlock?: string;
+  propertyType?: string;
 }
 
 interface PropertyCardProps {
