@@ -1,16 +1,150 @@
 import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
+import nodemailer from 'nodemailer';
 
 const app = express();
+
+// ====== MIDDLEWARE (must be before any routes) ======
+app.use(cors({
+  origin: [
+    'http://localhost:8080',
+    'http://localhost:5173'
+  ],
+  credentials: true,
+}));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+const EMAIL_USER = 'adeelgwa@gmail.com';
+const EMAIL_PASS = 'jycgbfachqdkou'; // Gmail app password
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: EMAIL_USER,
+    pass: EMAIL_PASS,
+  },
+});
+// ============== FORGOT PASSWORD ENDPOINTS ==============
+
+// Handle CORS preflight for this route
+app.options('/api/auth/forgot-password', cors());
+// Request password reset (send reset token)
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    // Log headers and body for debugging
+    console.log('--- Forgot Password Request ---');
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+    if (!req.body) {
+      return res.status(400).json({ success: false, error: 'Request body is missing or not parsed as JSON. Make sure Content-Type is application/json.' });
+    }
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required' });
+    }
+
+    // Check user in users table
+    const connection = await pool.getConnection();
+    const [users] = await connection.query('SELECT * FROM users WHERE email = ?', [email]);
+    const [agents] = await connection.query('SELECT * FROM agents WHERE email = ?', [email]);
+    let user = users[0] || agents[0];
+    if (!user) {
+      connection.release();
+      return res.status(404).json({ success: false, error: 'No account found with this email' });
+    }
+
+    // Generate a reset token (simple random string for demo)
+    const resetToken = uuidv4();
+    const expires = new Date(Date.now() + 1000 * 60 * 15); // 15 min expiry
+
+    // Store token in a new table (create if not exists)
+    await connection.query(
+      'CREATE TABLE IF NOT EXISTS password_resets (email VARCHAR(255), token VARCHAR(255), expires DATETIME)'
+    );
+    await connection.query(
+      'REPLACE INTO password_resets (email, token, expires) VALUES (?, ?, ?)',
+      [email, resetToken, expires]
+    );
+    connection.release();
+
+    // Send password reset email
+    const resetUrl = `http://localhost:5173/forgot-password?email=${encodeURIComponent(email)}&token=${resetToken}`;
+    const mailOptions = {
+      from: `Aura Home <${EMAIL_USER}>`,
+      to: email,
+      subject: 'Aura Home Password Reset',
+      html: `<p>Hello,</p>
+        <p>You requested a password reset for your Aura Home account.</p>
+        <p><a href="${resetUrl}">Click here to reset your password</a></p>
+        <p>This link will expire in 15 minutes.</p>
+        <p>If you did not request this, please ignore this email.</p>
+        <br><p>Regards,<br>Aura Home Team</p>`
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({ success: true, message: 'Password reset link sent to your email.' });
+  } catch (error) {
+    console.error('Error sending password reset email:', error);
+    res.status(500).json({ success: false, error: 'Failed to send password reset email.' });
+  }
+});
+
+// Reset password using token
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { email, token, newPassword } = req.body;
+    if (!email || !token || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+
+    const connection = await pool.getConnection();
+    // Check token
+    const [rows] = await connection.query('SELECT * FROM password_resets WHERE email = ? AND token = ?', [email, token]);
+    if (!rows.length || new Date(rows[0].expires) < new Date()) {
+      connection.release();
+      return res.status(400).json({ success: false, error: 'Invalid or expired token' });
+    }
+
+    // Update password in users or agents
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const [userRows] = await connection.query('SELECT * FROM users WHERE email = ?', [email]);
+    if (userRows.length) {
+      await connection.query('UPDATE users SET password_hash = ? WHERE email = ?', [hashedPassword, email]);
+    } else {
+      const [agentRows] = await connection.query('SELECT * FROM agents WHERE email = ?', [email]);
+      if (agentRows.length) {
+        await connection.query('UPDATE agents SET password_hash = ? WHERE email = ?', [hashedPassword, email]);
+      } else {
+        connection.release();
+        return res.status(404).json({ success: false, error: 'No account found' });
+      }
+    }
+
+    // Remove used token
+    await connection.query('DELETE FROM password_resets WHERE email = ?', [email]);
+    connection.release();
+    res.json({ success: true, message: 'Password reset successful' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 const PORT = 3001;
 const JWT_SECRET = 'aura_home_secret_key_2024';
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:8080',
+    'http://localhost:5173'
+  ],
+  credentials: true,
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 

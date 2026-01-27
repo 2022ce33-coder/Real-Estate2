@@ -9,9 +9,11 @@ import Agents from "./pages/Agents";
 import AgentProfile from "./pages/AgentProfile";
 import PropertyDetail from "./pages/PropertyDetail";
 import Login from "./pages/Login";
+import AdminLogin from "./pages/AdminLogin";
 import Register from "./pages/Register";
 import SearchPage from "./pages/Search";
 import NotFound from "./pages/NotFound";
+import ForgotPassword from "./pages/ForgotPassword";
 import Admin from "./pages/Admin";
 import AgentDashboard from "./pages/AgentDashboard";
 import UserDashboard from "./pages/UserDashboard";
@@ -34,7 +36,9 @@ const App = () => (
           <Route path="/agent/:agentId" element={<AgentProfile />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/login/admin" element={<AdminLogin />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/agent-dashboard" element={<AgentDashboard />} />
           <Route path="/user-dashboard" element={<UserDashboard />} />
