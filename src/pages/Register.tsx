@@ -12,6 +12,10 @@ type UserType = "user" | "agent";
 
 const Register = () => {
   const navigate = useNavigate();
+  const [step, setStep] = useState<"register" | "verify">("register");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [registeredEmail, setRegisteredEmail] = useState("");
+  const [registeredUserType, setRegisteredUserType] = useState<UserType>("user");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [userType, setUserType] = useState<UserType>("user");
   const [showPassword, setShowPassword] = useState(false);
@@ -130,14 +134,87 @@ const Register = () => {
       const data = await response.json();
 
       if (data.success) {
-        alert('Registration successful! Please log in with your credentials.');
-        navigate('/login');
+        // Store email and userType for verification step
+        setRegisteredEmail(formData.email);
+        setRegisteredUserType(userType);
+        setStep("verify");
+        alert('Registration successful! Please check your email for the verification code.');
       } else {
         alert('Registration failed: ' + data.error);
       }
     } catch (error) {
       console.error('Registration error:', error);
       alert('Error during registration. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (verificationCode.length !== 6) {
+      alert('Please enter the 6-digit verification code');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('http://localhost:3001/api/auth/verify-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: registeredEmail,
+          verificationCode: verificationCode,
+          userType: registeredUserType,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('Email verified successfully! You can now login.');
+        navigate('/login');
+      } else {
+        alert('Verification failed: ' + data.error);
+      }
+    } catch (error) {
+      console.error('Verification error:', error);
+      alert('Error during verification. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('http://localhost:3001/api/auth/resend-verification-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: registeredEmail,
+          userType: registeredUserType,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('Verification code resent! Please check your email.');
+        setVerificationCode("");
+      } else {
+        alert('Failed to resend code: ' + data.error);
+      }
+    } catch (error) {
+      console.error('Resend error:', error);
+      alert('Error resending code. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -158,47 +235,58 @@ const Register = () => {
                 </div>
                 <span className="text-2xl font-bold gradient-text">PropAI</span>
               </Link>
-              <h1 className="text-2xl font-bold">Create Account</h1>
-              <p className="text-muted-foreground mt-1">Join our AI-powered real estate platform</p>
+              <h1 className="text-2xl font-bold">
+                {step === "register" ? "Create Account" : "Verify Your Email"}
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                {step === "register" 
+                  ? "Join our AI-powered real estate platform" 
+                  : "Enter the 6-digit code sent to your email"}
+              </p>
             </div>
 
-            {/* User Type Toggle */}
-            <div className="flex justify-center gap-4 mb-8">
-              <button
-                type="button"
-                onClick={() => setUserType("user")}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all ${
-                  userType === "user"
-                    ? "bg-primary text-primary-foreground shadow-glow"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-              >
-                <User className="w-5 h-5" />
-                User
-              </button>
-              <button
-                type="button"
-                onClick={() => setUserType("agent")}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all ${
-                  userType === "agent"
-                    ? "bg-primary text-primary-foreground shadow-glow"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-              >
-                <Briefcase className="w-5 h-5" />
-                Agent
-              </button>
-            </div>
+            {step === "register" ? (
+              <>
+                {/* User Type Toggle */}
+                <div className="flex justify-center gap-4 mb-8">
+                  <button
+                    type="button"
+                    onClick={() => setUserType("user")}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all ${
+                      userType === "user"
+                        ? "bg-primary text-primary-foreground shadow-glow"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    <User className="w-5 h-5" />
+                    User
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUserType("agent")}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all ${
+                      userType === "agent"
+                        ? "bg-primary text-primary-foreground shadow-glow"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    <Briefcase className="w-5 h-5" />
+                    Agent
+                  </button>
+                </div>
+              </>
+            ) : null}
 
-            <Card variant="glass">
-              <CardContent className="p-6">
-                {userType === "agent" && (
-                  <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                    <p className="text-sm text-amber-700 dark:text-amber-400">
-                      <strong>Note:</strong> Agent accounts require admin approval. You'll need to upload your CNIC and other relevant documents for verification.
-                    </p>
-                  </div>
-                )}
+            {step === "register" ? (
+              <Card variant="glass">
+                <CardContent className="p-6">
+                  {userType === "agent" && (
+                    <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                      <p className="text-sm text-amber-700 dark:text-amber-400">
+                        <strong>Note:</strong> Agent accounts require admin approval. You'll need to upload your CNIC and other relevant documents for verification.
+                      </p>
+                    </div>
+                  )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                   {/* Name */}
@@ -426,6 +514,84 @@ const Register = () => {
                 </p>
               </CardContent>
             </Card>
+            ) : (
+              <Card variant="glass">
+                <CardContent className="p-6">
+                  {/* Email Info */}
+                  <div className="mb-6 p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-center">
+                    <p className="text-sm text-blue-700 dark:text-blue-400">
+                      We've sent a 6-digit verification code to:<br />
+                      <strong className="text-base">{registeredEmail}</strong>
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleVerifyEmail} className="space-y-6">
+                    {/* Verification Code Input */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-center block">Enter Verification Code</label>
+                      <div className="flex justify-center">
+                        <Input
+                          type="text"
+                          placeholder="000000"
+                          value={verificationCode}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '');
+                            if (value.length <= 6) {
+                              setVerificationCode(value);
+                            }
+                          }}
+                          maxLength={6}
+                          className="text-center text-2xl font-bold tracking-[0.5em] max-w-xs"
+                          required
+                        />
+                      </div>
+                      <p className="text-xs text-center text-muted-foreground mt-2">
+                        Check your email inbox (and spam folder)
+                      </p>
+                    </div>
+
+                    {/* Verify Button */}
+                    <Button 
+                      type="submit" 
+                      variant="hero" 
+                      className="w-full"
+                      disabled={isLoading || verificationCode.length !== 6}
+                    >
+                      {isLoading ? "Verifying..." : "Verify Email"}
+                    </Button>
+
+                    {/* Resend Code */}
+                    <div className="text-center space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        Didn't receive the code?
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleResendCode}
+                        disabled={isLoading}
+                        className="w-full"
+                      >
+                        Resend Code
+                      </Button>
+                    </div>
+
+                    {/* Back to Registration */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setStep("register");
+                        setVerificationCode("");
+                      }}
+                      className="w-full"
+                    >
+                      ← Back to Registration
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </main>

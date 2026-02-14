@@ -89,10 +89,10 @@ SWC                                     Fast TypeScript/JSX compiler
 -----------------------------------------------------
 PROJECT STRUCTURE
 -----------------------------------------------------
-src/           React frontend code (pages, components, hooks, integrations)
-server.js      Express backend API with MySQL
-public/        Static assets
-docs/          Documentation
+src/              React frontend code (pages, components, hooks, integrations)
+backend/server.js Express backend API with MySQL
+public/           Static assets
+docs/             Documentation
 
 -----------------------------------------------------
 SUMMARY

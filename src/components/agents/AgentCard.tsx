@@ -78,7 +78,7 @@ export function AgentCard({ agent, onViewProfile, onContact }: AgentCardProps) {
             <div className="text-center">
               <div className="flex items-center justify-center gap-1">
                 <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                <p className="text-lg font-bold text-foreground">{agent.rating}</p>
+                <p className="text-lg font-bold text-foreground">{Math.round(agent.rating)}</p>
               </div>
               <p className="text-xs text-muted-foreground">{agent.reviews} reviews</p>
             </div>

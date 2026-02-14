@@ -305,7 +305,7 @@ export default function AgentProfile() {
                     {agent.rating && (
                       <div className="flex items-center gap-1">
                         <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                        <span className="font-semibold">{agent.rating}</span>
+                        <span className="font-semibold">{Math.round(agent.rating)}</span>
                       </div>
                     )}
                     <span className="text-muted-foreground">{properties.length} Properties</span>

@@ -1,0 +1,255 @@
+# Week 2 - OS Mastery (Windows & Linux) Lab Manual
+
+## Course Overview
+**Week 2: OS Mastery (Windows & Linux)**
+**Duration:** Week 2
+**Deliverable:** OS Hardening Checklist
+
+## Learning Objectives
+By the end of this week, students will be able to:
+- Navigate and manage Windows and Linux operating systems effectively
+- Implement OS-level security configurations
+- Understand file permissions and access controls
+- Detect and analyze suspicious system processes
+- Create comprehensive OS hardening procedures
+
+## Topics Covered
+
+### 1. OS Internals
+- Windows architecture and file system (NTFS)
+- Linux architecture and file systems (ext4, XFS)
+- System boot processes
+- Memory management
+- Process management
+
+### 2. Permissions and Access Control
+- Windows ACLs (Access Control Lists)
+- Linux permissions (chmod, chown, chgrp)
+- User and group management
+- Privilege escalation concepts
+
+### 3. System Hardening
+- Removing unnecessary services
+- Configuring firewalls
+- System updates and patching
+- Audit policies and logging
+
+## Tools Required
+- **Windows:** PowerShell, Command Prompt, Event Viewer, Task Manager, Windows Defender
+- **Linux:** Kali Linux, Ubuntu, Terminal, SysInternals tools
+- **Virtual Machines:** VMware or VirtualBox
+- **Additional Tools:** Process Monitor, Autoruns, TCPView
+
+## Lab Environment Setup
+1. Windows 10/11 virtual machine
+2. Ubuntu 20.04+ virtual machine  
+3. Kali Linux virtual machine
+4. Snapshot capabilities enabled
+
+## Lab Activities
+
+### Lab 2.1: Windows System Exploration (60 minutes)
+**Objective:** Understand Windows system architecture and identify processes.
+
+**Instructions:**
+1. Open Task Manager and analyze running processes
+2. Use `netstat -an` to view network connections
+3. Examine Windows Event Logs in Event Viewer
+4. Navigate file system and understand NTFS permissions
+5. Document findings in provided worksheet
+
+**Deliverable:** Completed Windows system analysis worksheet
+
+### Lab 2.2: Linux System Exploration (60 minutes)
+**Objective:** Master Linux command line and system navigation.
+
+**Instructions:**
+1. Connect to Ubuntu virtual machine
+2. Practice essential commands:
+   ```bash
+   ls -la /etc/
+   ps aux | grep root
+   netstat -tulnp
+   cat /etc/passwd
+   sudo tail /var/log/syslog
+   ```
+3. Examine file permissions and modify them
+4. Create users and groups
+5. Configure sudo access
+
+**Deliverable:** Command history and file permission exercise results
+
+### Lab 2.3: Suspicious Process Detection (90 minutes)
+**Objective:** Identify unusual system behavior and potentially malicious processes.
+
+**Instructions:**
+1. **Windows Environment:**
+   - Use SysInternals Process Explorer
+   - Identify processes with no description
+   - Check unsigned executables
+   - Analyze network connections per process
+
+2. **Linux Environment:**
+   - Use `htop` and `ps` commands
+   - Identify processes running as root
+   - Check for unusual network connections
+   - Examine process trees
+
+**Deliverable:** Suspicious process identification report
+
+### Lab 2.4: System Hardening Implementation (120 minutes)
+**Objective:** Apply security hardening techniques to both Windows and Linux systems.
+
+**Windows Hardening Tasks:**
+1. Disable unnecessary services
+2. Configure Windows Firewall rules
+3. Enable advanced audit policies
+4. Set password policies
+5. Configure User Account Control (UAC)
+
+**Linux Hardening Tasks:**
+1. Update system packages
+2. Configure iptables firewall
+3. Disable unused services using systemctl
+4. Set up fail2ban for intrusion prevention
+5. Configure SSH security
+
+## Lab Tasks (To be completed during lab session)
+
+### Task 1: Permission Matrix Creation
+Create a comprehensive matrix showing different permission levels for both Windows and Linux systems.
+
+### Task 2: Service Audit
+Perform a complete audit of running services on both operating systems and categorize them as:
+- Essential
+- Important but not critical
+- Unnecessary and should be disabled
+- Potentially suspicious
+
+### Task 3: Log Analysis Exercise
+Analyze provided log files from both Windows Event Logs and Linux system logs to identify:
+- Failed login attempts
+- Service starts/stops
+- System errors
+- Security-related events
+
+### Task 4: Baseline Configuration
+Document the current state of your lab systems before and after hardening procedures.
+
+## Home Tasks (To be completed outside of class)
+
+### Home Task 1: Virtual Lab Setup (Due: Next week)
+**Objective:** Prepare personal lab environment for cybersecurity practice.
+
+**Requirements:**
+1. Install VMware Workstation or VirtualBox
+2. Create virtual machines:
+   - Windows 10/11
+   - Ubuntu Desktop/Server
+   - Kali Linux
+3. Configure network settings for isolated lab environment
+4. Create system snapshots for easy recovery
+5. Submit screenshots proving successful installation
+
+### Home Task 2: OS Hardening Checklist Development (Due: End of week)
+**Objective:** Create comprehensive hardening procedures for both operating systems.
+
+**Requirements:**
+1. Research industry-standard hardening guidelines (NIST, SANS, CIS Benchmarks)
+2. Create detailed checklists for:
+   - Windows 10/11 hardening (minimum 25 items)
+   - Ubuntu Linux hardening (minimum 25 items)
+3. Include verification steps for each hardening measure
+4. Test procedures on your lab systems
+5. Document results and any issues encountered
+6. Submit as professional-quality document with screenshots
+
+### Home Task 3: Process Monitoring Project (Due: Next week)
+**Objective:** Develop skills in continuous system monitoring.
+
+**Requirements:**
+1. Set up automated process monitoring on both OS types
+2. Create scripts to:
+   - Log new process creation
+   - Monitor network connections
+   - Track file system changes
+   - Alert on suspicious activity
+3. Run monitoring for 48 hours minimum
+4. Analyze collected data and create summary report
+5. Include recommendations for improvement
+
+### Home Task 4: Vulnerability Assessment (Due: Next week)
+**Objective:** Identify and document system vulnerabilities.
+
+**Requirements:**
+1. Use built-in tools to scan your lab systems:
+   - Windows: `systeminfo` and `wmic`
+   - Linux: `lynis` security auditing tool
+2. Identify potential vulnerabilities
+3. Research each vulnerability using CVE database
+4. Create remediation plan with priority levels
+5. Submit 3-page vulnerability assessment report
+
+### Home Task 5: Incident Response Simulation (Due: Ongoing)
+**Objective:** Practice responding to security incidents.
+
+**Requirements:**
+1. Simulate common attack scenarios:
+   - Malware infection
+   - Unauthorized access
+   - Resource exhaustion
+   - Data exfiltration
+2. Document proper response procedures
+3. Practice containment and recovery steps
+4. Keep incident response journal
+5. Submit weekly progress reports
+
+## Assessment Criteria
+
+### OS Hardening Checklist Grading Rubric (100 points total)
+- **Completeness (30 points):** Comprehensive coverage of hardening measures
+- **Technical Accuracy (25 points):** Correct procedures and commands
+- **Testing Documentation (20 points):** Evidence of testing each procedure
+- **Industry Standards Compliance (15 points):** Alignment with CIS/NIST guidelines
+- **Presentation Quality (10 points):** Professional documentation and formatting
+
+## Advanced Challenges (Optional Bonus)
+
+### Challenge 1: Automated Hardening Script
+Create PowerShell and Bash scripts that automatically apply your hardening checklists.
+
+### Challenge 2: Custom Process Monitor
+Develop a custom application that monitors system processes and alerts on anomalies.
+
+### Challenge 3: Log Correlation Tool
+Build a tool that correlates Windows Event Logs with Linux system logs for comprehensive monitoring.
+
+## Common Troubleshooting
+
+### Windows Issues:
+- Permission denied errors: Run as administrator
+- Service won't stop: Check dependencies
+- Registry access issues: Verify user rights
+
+### Linux Issues:
+- Permission denied: Use `sudo` or check file ownership
+- Service management: Use `systemctl` instead of older init scripts
+- Package installation: Update package lists first
+
+## Additional Resources
+- Microsoft Security Baselines: https://docs.microsoft.com/en-us/windows/security/
+- CIS Benchmarks: https://www.cisecurity.org/cis-benchmarks/
+- Linux Security HOWTO: https://tldp.org/HOWTO/Security-HOWTO/
+- SANS Windows Security: https://www.sans.org/white-papers/
+
+## Tips for Success
+1. Take detailed notes during hands-on exercises
+2. Create your own command reference sheet
+3. Practice commands multiple times until they become natural
+4. Always create system backups before making changes
+5. Document everything - you'll reference it later
+
+## Emergency Contacts
+**Technical Issues:** [IT Support Email]
+**Lab Access Problems:** [Lab Coordinator]
+**After-hours Support:** [Emergency Contact]

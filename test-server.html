@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aura Home - Server Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-box {
+            background: white;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .pending { color: #ffc107; font-weight: bold; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover { background: #c82333; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Aura Home Server Test</h1>
+    
+    <div class="test-box">
+        <h2>Step 1: Server Health Check</h2>
+        <p id="health-status" class="pending">⏳ Testing...</p>
+        <button onclick="testHealth()">🔄 Test Server</button>
+    </div>
+
+    <div class="test-box">
+        <h2>Step 2: Clear Browser Token</h2>
+        <p>Current token in localStorage:</p>
+        <pre id="current-token">Checking...</pre>
+        <button class="btn-danger" onclick="clearToken()">🗑️ Clear Token</button>
+        <p id="clear-status"></p>
+    </div>
+
+    <div class="test-box">
+        <h2>Step 3: Admin Login Test</h2>
+        <div>
+            <input type="email" id="email" value="dummy@gmail.com" placeholder="Email" style="padding: 8px; margin: 5px; width: 200px;">
+            <input type="password" id="password" value="asd123" placeholder="Password" style="padding: 8px; margin: 5px; width: 200px;">
+        </div>
+        <button class="btn-success" onclick="testLogin()">🔑 Test Login</button>
+        <p id="login-status"></p>
+        <pre id="login-response"></pre>
+    </div>
+
+    <div class="test-box">
+        <h2>Step 4: Test Protected Route (Properties)</h2>
+        <button onclick="testProtected()">🔒 Test Admin Access</button>
+        <p id="protected-status"></p>
+        <pre id="protected-response"></pre>
+    </div>
+
+    <div class="test-box">
+        <h2>📋 Instructions</h2>
+        <ol>
+            <li>Test if server is running (Step 1)</li>
+            <li>Clear old token (Step 2)</li>
+            <li>Login to get new token (Step 3)</li>
+<li>Test if admin can access properties (Step 4)</li>
+        </ol>
+        <p><strong>If all tests pass, go to admin panel and try bulk assign!</strong></p>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3001';
+
+        // Check current token on load
+        window.onload = function() {
+            const token = localStorage.getItem('token');
+            document.getElementById('current-token').textContent = token ? 
+                `Token exists: ${token.substring(0, 50)}...` : 
+                'No token found (Good if you just cleared it!)';
+            testHealth();
+        };
+
+        async function testHealth() {
+            const el = document.getElementById('health-status');
+            el.className = 'pending';
+            el.textContent = '⏳ Testing server...';
+            
+            try {
+                const res = await fetch(`${API_URL}/api/health`);
+                const data = await res.json();
+                if (data.success) {
+                    el.className = 'success';
+                    el.textContent = '✅ Server is running perfectly!';
+} else {
+                    el.className = 'error';
+                    el.textContent = '❌ Server responded but with error';
+                }
+            } catch (err) {
+                el.className = 'error';
+                el.textContent = `❌ Server is NOT running! Error: ${err.message}`;
+            }
+        }
+
+        function clearToken() {
+            localStorage.removeItem('token');
+            document.getElementById('clear-status').innerHTML = '<span class="success">✅ Token cleared!</span>';
+            document.getElementById('current-token').textContent = 'No token found (Perfect!)';
+        }
+
+        async function testLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const statusEl = document.getElementById('login-status');
+            const responseEl = document.getElementById('login-response');
+            
+            statusEl.className = 'pending';
+            statusEl.textContent = '⏳ Attempting login...';
+            responseEl.textContent = '';
+            
+            try {
+                const res = await fetch(`${API_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await res.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+                
+                if (data.success && data.token) {
+                    localStorage.setItem('token', data.token);
+                    statusEl.className = 'success';
+                    statusEl.textContent = '✅ Login successful! New token saved!';
+                    document.getElementById('current-token').textContent = `New token: ${data.token.substring(0, 50)}...`;
+                } else {
+                    statusEl.className = 'error';
+                    statusEl.textContent = `❌ Login failed: ${data.error || 'Unknown error'}`;
+                }
+            } catch (err) {
+                statusEl.className = 'error';
+                statusEl.textContent = `❌ Network error: ${err.message}`;
+            }
+        }
+
+        async function testProtected() {
+            const token = localStorage.getItem('token');
+            const statusEl = document.getElementById('protected-status');
+            const responseEl = document.getElementById('protected-response');
+            
+            if (!token) {
+                statusEl.className = 'error';
+                statusEl.textContent = '❌ No token found! Please login first (Step 3)';
+                return;
+            }
+            
+            statusEl.className = 'pending';
+            statusEl.textContent = '⏳ Testing admin access...';
+            responseEl.textContent = '';
+            
+            try {
+                const res = await fetch(`${API_URL}/api/agent-applications`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await res.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+                
+                if (res.status === 200 && data.success) {
+                    statusEl.className = 'success';
+                    statusEl.textContent = '✅ Admin access WORKS! 401 error is FIXED!';
+                } else if (res.status === 401) {
+                    statusEl.className = 'error';
+                    statusEl.textContent = '❌ Still getting 401! Token invalid. Try Step 2 & 3 again.';
+                } else {
+                    statusEl.className = 'error';
+                    statusEl.textContent = `❌ Error ${res.status}: ${data.error || 'Unknown'}`;
+                }
+            } catch (err) {
+                statusEl.className = 'error';
+                statusEl.textContent = `❌ Network error: ${err.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

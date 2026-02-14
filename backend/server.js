@@ -7,6 +7,8 @@ import { v4 as uuidv4 } from 'uuid';
 import nodemailer from 'nodemailer';
 
 const app = express();
+const PORT = 3001;
+const JWT_SECRET = 'aura_home_secret_key_2024';
 
 // ====== MIDDLEWARE (must be before any routes) ======
 app.use(cors({
@@ -19,21 +21,129 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-const EMAIL_USER = 'adeelgwa@gmail.com';
-const EMAIL_PASS = 'jycgbfachqdkou'; // Gmail app password
-
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS,
-  },
+// ====== MYSQL CONNECTION POOL ======
+const pool = mysql.createPool({
+  host: '216.106.180.123',
+  user: 'webdevco_realuser',
+  password: 'adeel@490A',
+  database: 'webdevco_real',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 });
+
+// Test database connection
+pool.getConnection()
+  .then(conn => {
+    console.log('✓ MySQL database connected successfully');
+    conn.release();
+  })
+  .catch(err => {
+    console.error('✗ Database connection failed:', err.message);
+  });
+
+// ====== GMAIL SMTP EMAIL SETUP ======
+const transporter = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true, // SSL
+  auth: {
+    user: 'adeelgwa@gmail.com',
+    pass: 'mgologwwfxcexwdc'
+  }
+});
+
+// Verify SMTP connection
+transporter.verify(function(error, success) {
+  if (error) {
+    console.error('✗ SMTP connection failed:', error);
+  } else {
+    console.log('✓ SMTP server ready to send emails');
+  }
+});
+
+// ====== UTILITY FUNCTIONS ======
+// Generate 6-digit verification code
+const generateVerificationCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Function to send verification email via Gmail SMTP
+const sendVerificationEmail = async (email, name, code) => {
+  try {
+    const mailOptions = {
+      from: '"Aura Home" <adeelgwa@gmail.com>',
+      to: email,
+      subject: 'Aura Home - Email Verification Code',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Welcome to Aura Home, ${name}!</h2>
+          <p>Thank you for registering with Aura Home Real Estate Platform.</p>
+          <p style="margin-top: 20px;">Your email verification code is:</p>
+          <div style="background-color: #f0f0f0; padding: 20px; text-align: center; border-radius: 5px; margin: 20px 0;">
+            <h1 style="letter-spacing: 5px; color: #333; margin: 0;">${code}</h1>
+          </div>
+          <p>This code will expire in 15 minutes.</p>
+          <p style="color: #666; font-size: 14px;">If you did not sign up for this account, please ignore this email.</p>
+          <br>
+          <p>Regards,<br><strong>Aura Home Team</strong></p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✓ Verification email sent to ${email}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending verification email:', error);
+    return false;
+  }
+};
+
+// Function to send password reset email via Gmail SMTP with 6-digit code
+const sendPasswordResetEmail = async (email, name, resetCode) => {
+  try {
+    console.log('📧 Sending password reset email...');
+    console.log('   Email:', email);
+    console.log('   Reset Code:', resetCode);
+
+    const mailOptions = {
+      from: '"Aura Home" <adeelgwa@gmail.com>',
+      to: email,
+      subject: 'Aura Home - Password Reset Code',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Password Reset Request</h2>
+          <p>Dear ${name},</p>
+          <p>You requested a password reset for your Aura Home account.</p>
+          <p style="margin-top: 20px;">Your password reset verification code is:</p>
+          <div style="background-color: #f0f0f0; padding: 20px; text-align: center; border-radius: 5px; margin: 20px 0;">
+            <h1 style="letter-spacing: 5px; color: #333; margin: 0;">${resetCode}</h1>
+          </div>
+          <p><strong>Security Note:</strong> This code will expire in 15 minutes.</p>
+          <p style="color: #666; font-size: 14px;">If you did not request this password reset, please ignore this email and your password will remain unchanged.</p>
+          <br>
+          <p>Regards,<br><strong>Aura Home Team</strong></p>
+        </div>
+      `
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✓ Password reset email sent successfully');
+    console.log('   Message ID:', result.messageId);
+    return true;
+  } catch (error) {
+    console.error('✗ Error sending password reset email:', error);
+    console.error('   Error Details:', error.message);
+    return false;
+  }
+};
+
 // ============== FORGOT PASSWORD ENDPOINTS ==============
 
 // Handle CORS preflight for this route
 app.options('/api/auth/forgot-password', cors());
-// Request password reset (send reset token)
+// Request password reset (send 6-digit verification code)
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     // Log headers and body for debugging
@@ -55,60 +165,67 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     let user = users[0] || agents[0];
     if (!user) {
       connection.release();
-      return res.status(404).json({ success: false, error: 'No account found with this email' });
+      // Prevent email enumeration attacks
+      return res.status(200).json({ success: true, message: 'If an account exists with that email, a reset code has been sent.' });
     }
 
-    // Generate a reset token (simple random string for demo)
-    const resetToken = uuidv4();
+    // Generate a 6-digit verification code
+    const resetCode = generateVerificationCode();
     const expires = new Date(Date.now() + 1000 * 60 * 15); // 15 min expiry
 
-    // Store token in a new table (create if not exists)
+    // Store code in password_resets table (create if not exists)
     await connection.query(
       'CREATE TABLE IF NOT EXISTS password_resets (email VARCHAR(255), token VARCHAR(255), expires DATETIME)'
     );
     await connection.query(
       'REPLACE INTO password_resets (email, token, expires) VALUES (?, ?, ?)',
-      [email, resetToken, expires]
+      [email, resetCode, expires]
     );
     connection.release();
 
-    // Send password reset email
-    const resetUrl = `http://localhost:5173/forgot-password?email=${encodeURIComponent(email)}&token=${resetToken}`;
-    const mailOptions = {
-      from: `Aura Home <${EMAIL_USER}>`,
-      to: email,
-      subject: 'Aura Home Password Reset',
-      html: `<p>Hello,</p>
-        <p>You requested a password reset for your Aura Home account.</p>
-        <p><a href="${resetUrl}">Click here to reset your password</a></p>
-        <p>This link will expire in 15 minutes.</p>
-        <p>If you did not request this, please ignore this email.</p>
-        <br><p>Regards,<br>Aura Home Team</p>`
-    };
+    // Send password reset email via Resend with 6-digit code
+    const emailSent = await sendPasswordResetEmail(email, user.name, resetCode);
 
-    await transporter.sendMail(mailOptions);
+    if (!emailSent) {
+      return res.status(500).json({ success: false, error: 'Failed to send password reset email.' });
+    }
 
-    res.json({ success: true, message: 'Password reset link sent to your email.' });
+    // Return success response
+    res.json({ 
+      success: true, 
+      message: 'Password reset code sent to your email. Please check your inbox.',
+      email: email
+    });
   } catch (error) {
     console.error('Error sending password reset email:', error);
     res.status(500).json({ success: false, error: 'Failed to send password reset email.' });
   }
 });
 
-// Reset password using token
+// Reset password using 6-digit verification code
 app.post('/api/auth/reset-password', async (req, res) => {
   try {
-    const { email, token, newPassword } = req.body;
-    if (!email || !token || !newPassword) {
-      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Missing required fields (email, code, newPassword)' });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 8 characters long' });
     }
 
     const connection = await pool.getConnection();
-    // Check token
-    const [rows] = await connection.query('SELECT * FROM password_resets WHERE email = ? AND token = ?', [email, token]);
-    if (!rows.length || new Date(rows[0].expires) < new Date()) {
+    // Check verification code
+    const [rows] = await connection.query('SELECT * FROM password_resets WHERE email = ? AND token = ?', [email, code]);
+    if (!rows.length) {
       connection.release();
-      return res.status(400).json({ success: false, error: 'Invalid or expired token' });
+      return res.status(400).json({ success: false, error: 'Invalid verification code' });
+    }
+
+    if (new Date(rows[0].expires) < new Date()) {
+      connection.release();
+      return res.status(400).json({ success: false, error: 'Verification code has expired. Please request a new one.' });
     }
 
     // Update password in users or agents
@@ -126,48 +243,17 @@ app.post('/api/auth/reset-password', async (req, res) => {
       }
     }
 
-    // Remove used token
+    // Remove used verification code
     await connection.query('DELETE FROM password_resets WHERE email = ?', [email]);
     connection.release();
-    res.json({ success: true, message: 'Password reset successful' });
+    
+    console.log('✓ Password reset successful for:', email);
+    res.json({ success: true, message: 'Password reset successful. You can now login with your new password.' });
   } catch (error) {
+    console.error('Password reset error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
-const PORT = 3001;
-const JWT_SECRET = 'aura_home_secret_key_2024';
-
-// Middleware
-app.use(cors({
-  origin: [
-    'http://localhost:8080',
-    'http://localhost:5173'
-  ],
-  credentials: true,
-}));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
-// MySQL connection pool
-const pool = mysql.createPool({
-  host: '216.106.180.123',
-  user: 'webdevco_realuser',
-  password: 'adeel@490A',
-  database: 'webdevco_real',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
-
-// Test database connection
-pool.getConnection()
-  .then(conn => {
-    console.log('✓ MySQL database connected successfully');
-    conn.release();
-  })
-  .catch(err => {
-    console.error('✗ Database connection failed:', err.message);
-  });
 
 // ============== AUTHENTICATION MIDDLEWARE ==============
 
@@ -179,10 +265,30 @@ const verifyToken = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.id;
+    req.userRole = decoded.type; // 'admin', 'agent', 'user'
+    req.userStatus = decoded.status; // e.g., 'approved' for agents
     next();
   } catch (error) {
     res.status(401).json({ success: false, error: 'Invalid token' });
   }
+};
+
+// Role-based authorization middleware
+const requireRole = (...roles) => {
+  return (req, res, next) => {
+    if (!req.userRole || !roles.includes(req.userRole)) {
+      return res.status(403).json({ success: false, error: 'Forbidden: insufficient role' });
+    }
+    next();
+  };
+};
+
+// Require agent with approved status
+const requireApprovedAgent = (req, res, next) => {
+  if (req.userRole !== 'agent' || req.userStatus !== 'approved') {
+    return res.status(403).json({ success: false, error: 'Forbidden: agent must be approved' });
+  }
+  next();
 };
 
 // ============== AUTHENTICATION ENDPOINTS ==============
@@ -225,32 +331,215 @@ app.post('/api/auth/register', async (req, res) => {
 
       // Store attachments as JSON array
       const attachmentArray = Array.isArray(attachments) ? attachments : [];
+      
+      // Generate verification code
+      const verificationCode = generateVerificationCode();
+      const codeExpires = new Date(Date.now() + 1000 * 60 * 15); // 15 min expiry
 
       await connection.query(
-        'INSERT INTO agent_applications (id, name, email, phone, agency, experience, cnic, address, password_hash, attachments) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [userId, name, email, phone, agency, experience, cnic, address, hashedPassword, JSON.stringify(attachmentArray)]
+        'INSERT INTO agent_applications (id, name, email, phone, agency, experience, cnic, address, password_hash, attachments, verification_code, verification_code_expires) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [userId, name, email, phone, agency, experience, cnic, address, hashedPassword, JSON.stringify(attachmentArray), verificationCode, codeExpires]
       );
 
       connection.release();
+      
+      // Send verification email
+      await sendVerificationEmail(email, name, verificationCode);
+
       res.status(201).json({ 
         success: true, 
-        message: 'Agent application submitted successfully. Please wait for admin approval.' 
+        message: 'Agent application submitted successfully. Please verify your email using the code sent to you.',
+        userId: userId,
+        requiresVerification: true
       });
     } else {
       // Regular user registration
+      
+      // Generate verification code
+      const verificationCode = generateVerificationCode();
+      const codeExpires = new Date(Date.now() + 1000 * 60 * 15); // 15 min expiry
+
       await connection.query(
-        'INSERT INTO users (id, name, email, phone, password_hash) VALUES (?, ?, ?, ?, ?)',
-        [userId, name, email, phone, hashedPassword]
+        'INSERT INTO users (id, name, email, phone, password_hash, verification_code, verification_code_expires) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [userId, name, email, phone, hashedPassword, verificationCode, codeExpires]
       );
 
       connection.release();
+      
+      // Send verification email
+      await sendVerificationEmail(email, name, verificationCode);
+
       res.status(201).json({ 
         success: true, 
-        message: 'User registered successfully. You can now login.' 
+        message: 'User registered successfully. Please verify your email using the code sent to you.',
+        userId: userId,
+        requiresVerification: true
       });
     }
   } catch (error) {
     console.error('Registration error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Verify Email with 6-digit code
+app.post('/api/auth/verify-email', async (req, res) => {
+  try {
+    const { email, verificationCode, userType } = req.body;
+
+    if (!email || !verificationCode) {
+      return res.status(400).json({ success: false, error: 'Email and verification code are required' });
+    }
+
+    const connection = await pool.getConnection();
+
+    let user;
+    
+    if (userType === 'agent') {
+      // Check in agent_applications table first
+      const [applications] = await connection.query(
+        'SELECT * FROM agent_applications WHERE email = ?',
+        [email]
+      );
+      
+      if (applications.length === 0) {
+        // Check in agents table
+        const [agents] = await connection.query(
+          'SELECT * FROM agents WHERE email = ?',
+          [email]
+        );
+        user = agents.length > 0 ? agents[0] : null;
+      } else {
+        user = applications[0];
+      }
+    } else {
+      // Check in users table
+      const [users] = await connection.query(
+        'SELECT * FROM users WHERE email = ?',
+        [email]
+      );
+      user = users.length > 0 ? users[0] : null;
+    }
+
+    if (!user) {
+      connection.release();
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // Check if already verified
+    if (user.email_verified) {
+      connection.release();
+      return res.status(400).json({ success: false, error: 'Email already verified' });
+    }
+
+    // Check if code is correct
+    if (user.verification_code !== verificationCode) {
+      connection.release();
+      return res.status(400).json({ success: false, error: 'Invalid verification code' });
+    }
+
+    // Check if code has expired
+    const now = new Date();
+    if (new Date(user.verification_code_expires) < now) {
+      connection.release();
+      return res.status(400).json({ success: false, error: 'Verification code has expired' });
+    }
+
+    // Mark email as verified
+    if (userType === 'agent') {
+      await connection.query(
+        'UPDATE agent_applications SET email_verified = true, verification_code = NULL, verification_code_expires = NULL WHERE email = ?',
+        [email]
+      );
+    } else {
+      await connection.query(
+        'UPDATE users SET email_verified = true, verification_code = NULL, verification_code_expires = NULL WHERE email = ?',
+        [email]
+      );
+    }
+
+    connection.release();
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully. You can now login.'
+    });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Resend Verification Code
+app.post('/api/auth/resend-verification-code', async (req, res) => {
+  try {
+    const { email, userType } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required' });
+    }
+
+    const connection = await pool.getConnection();
+
+    let user;
+    let tableName;
+
+    if (userType === 'agent') {
+      const [applications] = await connection.query(
+        'SELECT * FROM agent_applications WHERE email = ?',
+        [email]
+      );
+      
+      if (applications.length === 0) {
+        const [agents] = await connection.query(
+          'SELECT * FROM agents WHERE email = ?',
+          [email]
+        );
+        user = agents.length > 0 ? agents[0] : null;
+        tableName = 'agents';
+      } else {
+        user = applications[0];
+        tableName = 'agent_applications';
+      }
+    } else {
+      const [users] = await connection.query(
+        'SELECT * FROM users WHERE email = ?',
+        [email]
+      );
+      user = users.length > 0 ? users[0] : null;
+      tableName = 'users';
+    }
+
+    if (!user) {
+      connection.release();
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    if (user.email_verified) {
+      connection.release();
+      return res.status(400).json({ success: false, error: 'Email already verified' });
+    }
+
+    // Generate new verification code
+    const verificationCode = generateVerificationCode();
+    const codeExpires = new Date(Date.now() + 1000 * 60 * 15); // 15 min expiry
+
+    await connection.query(
+      `UPDATE ${tableName} SET verification_code = ?, verification_code_expires = ? WHERE email = ?`,
+      [verificationCode, codeExpires, email]
+    );
+
+    connection.release();
+
+    // Send verification email
+    await sendVerificationEmail(email, user.name, verificationCode);
+
+    res.json({
+      success: true,
+      message: 'Verification code sent to your email'
+    });
+  } catch (error) {
+    console.error('Resend verification error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -299,6 +588,17 @@ app.post('/api/auth/login', async (req, res) => {
         return res.status(401).json({ success: false, error: 'Invalid credentials' });
       }
 
+      // Check if email is verified
+      if (!user.email_verified) {
+        connection.release();
+        return res.status(403).json({ 
+          success: false, 
+          error: 'Email not verified. Please check your email for the verification code.',
+          userId: user.id,
+          requiresVerification: true
+        });
+      }
+
       connection.release();
 
       const token = jwt.sign(
@@ -333,6 +633,7 @@ app.post('/api/auth/login', async (req, res) => {
         return res.status(401).json({ success: false, error: 'Invalid credentials' });
       }
 
+      // Approved agents are always verified
       connection.release();
 
       const token = jwt.sign(
@@ -368,6 +669,18 @@ app.post('/api/auth/login', async (req, res) => {
       if (!isPasswordValid) {
         connection.release();
         return res.status(401).json({ success: false, error: 'Invalid credentials' });
+      }
+
+      // Check if email is verified
+      if (!application.email_verified) {
+        connection.release();
+        return res.status(403).json({ 
+          success: false, 
+          error: 'Email not verified. Please check your email for the verification code.',
+          userId: application.id,
+          requiresVerification: true,
+          userType: 'agent'
+        });
       }
 
       connection.release();
@@ -499,8 +812,8 @@ app.put('/api/profiles/:id', async (req, res) => {
 
 // ============== AGENT APPLICATIONS ENDPOINTS ==============
 
-// Get all agent applications
-app.get('/api/agent-applications', async (req, res) => {
+// Get all agent applications (admin only)
+app.get('/api/agent-applications', verifyToken, requireRole('admin'), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     const [rows] = await connection.query('SELECT * FROM agent_applications ORDER BY created_at DESC');
@@ -555,8 +868,8 @@ app.put('/api/agent-applications/:id', async (req, res) => {
   }
 });
 
-// Approve agent application
-app.post('/api/agent-applications/:id/approve', async (req, res) => {
+// Approve agent application (admin only)
+app.post('/api/agent-applications/:id/approve', verifyToken, requireRole('admin'), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await connection.query('CALL approve_agent(?)', [req.params.id]);
@@ -567,8 +880,8 @@ app.post('/api/agent-applications/:id/approve', async (req, res) => {
   }
 });
 
-// Reject agent application
-app.post('/api/agent-applications/:id/reject', async (req, res) => {
+// Reject agent application (admin only)
+app.post('/api/agent-applications/:id/reject', verifyToken, requireRole('admin'), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await connection.query('CALL reject_agent(?)', [req.params.id]);
@@ -980,8 +1293,8 @@ app.get('/api/properties/featured/true', async (req, res) => {
   }
 });
 
-// Create property
-app.post('/api/properties', verifyToken, async (req, res) => {
+// Create property (agent or admin only)
+app.post('/api/properties', verifyToken, requireRole('agent', 'admin'), async (req, res) => {
   try {
     const { title, description, price, property_type, type, bedrooms, bathrooms, area_sqft, address, location, city, state, zip_code, latitude, longitude, images, agent_id, status, featured, amenities, user_id, society_id, society_phase, society_block } = req.body;
     const propertyType = property_type || type || 'Apartment';
@@ -1029,16 +1342,16 @@ app.post('/api/properties', verifyToken, async (req, res) => {
   }
 });
 
-// Update property
-app.put('/api/properties/:id', verifyToken, async (req, res) => {
+// Update property (agent or admin only)
+app.put('/api/properties/:id', verifyToken, requireRole('agent', 'admin'), async (req, res) => {
   try {
-    const { title, description, price, property_type, type, bedrooms, bathrooms, area_sqft, address, location, city, state, zip_code, latitude, longitude, images, status, featured, amenities, society_id, society_phase, society_block } = req.body;
+    const { title, description, price, property_type, type, bedrooms, bathrooms, area_sqft, address, location, city, state, zip_code, latitude, longitude, images, status, featured, amenities, society_id, society_phase, society_block, agent_id } = req.body;
     const propertyType = property_type || type || 'Apartment';
     const connection = await pool.getConnection();
     
     const updateQuery = `
       UPDATE properties 
-      SET title = ?, description = ?, price = ?, property_type = ?, bedrooms = ?, bathrooms = ?, area_sqft = ?, address = ?, city = ?, state = ?, zip_code = ?, latitude = ?, longitude = ?, images = ?, amenities = ?, status = ?, featured = ?, society_id = ?, society_phase = ?, society_block = ?, updated_at = NOW() 
+      SET title = ?, description = ?, price = ?, property_type = ?, bedrooms = ?, bathrooms = ?, area_sqft = ?, address = ?, city = ?, state = ?, zip_code = ?, latitude = ?, longitude = ?, images = ?, amenities = ?, status = ?, featured = ?, society_id = ?, society_phase = ?, society_block = ?, agent_id = ?, updated_at = NOW() 
       WHERE id = ?
     `;
     
@@ -1063,6 +1376,7 @@ app.put('/api/properties/:id', verifyToken, async (req, res) => {
       society_id || null,
       society_phase || null,
       society_block || null,
+      agent_id || null,
       req.params.id
     ]);
     connection.release();
@@ -1072,8 +1386,8 @@ app.put('/api/properties/:id', verifyToken, async (req, res) => {
   }
 });
 
-// Delete property
-app.delete('/api/properties/:id', verifyToken, async (req, res) => {
+// Delete property (admin only)
+app.delete('/api/properties/:id', verifyToken, requireRole('admin'), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await connection.query('DELETE FROM properties WHERE id = ?', [req.params.id]);
@@ -1084,8 +1398,8 @@ app.delete('/api/properties/:id', verifyToken, async (req, res) => {
   }
 });
 
-// Get all users (for agents to start chat)
-app.get('/api/users', verifyToken, async (req, res) => {
+// Get all users (approved agents only)
+app.get('/api/users', verifyToken, requireRole('agent'), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     const [rows] = await connection.query('SELECT id, name, email, phone, created_at FROM users ORDER BY created_at DESC');

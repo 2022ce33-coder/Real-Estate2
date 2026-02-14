@@ -8,6 +8,9 @@ CREATE TABLE users (
   email VARCHAR(255) NOT NULL UNIQUE,
   phone VARCHAR(20),
   password_hash VARCHAR(255) NOT NULL,
+  email_verified BOOLEAN DEFAULT false,
+  verification_code VARCHAR(6),
+  verification_code_expires DATETIME,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -38,6 +41,9 @@ CREATE TABLE agent_applications (
   address TEXT NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   attachments JSON DEFAULT '[]',
+  email_verified BOOLEAN DEFAULT false,
+  verification_code VARCHAR(6),
+  verification_code_expires DATETIME,
   status VARCHAR(50) DEFAULT 'pending',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -57,6 +63,8 @@ CREATE TABLE agents (
   cnic TEXT NOT NULL,
   address TEXT NOT NULL,
   attachments JSON DEFAULT '[]',
+  password_hash VARCHAR(255),
+  email_verified BOOLEAN DEFAULT true,
   approved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

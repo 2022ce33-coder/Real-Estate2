@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 const ForgotPassword = () => {
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
-  const [token, setToken] = useState("");
+  const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -30,14 +30,12 @@ const ForgotPassword = () => {
       const data = await res.json();
       if (data.success) {
         setStep(2);
-        setMessage("A reset token has been sent to your email (demo: check console or ask admin). Use it below.");
-        // For demo, show token in alert
-        alert("Reset token: " + data.resetToken);
+        setMessage("A 6-digit verification code has been sent to your email. Please check your inbox.");
       } else {
-        setMessage(data.error || "Failed to send reset link.");
+        setMessage(data.error || "Failed to send reset code.");
       }
     } catch {
-      setMessage("Error sending reset link.");
+      setMessage("Error sending reset code.");
     } finally {
       setLoading(false);
     }
@@ -45,22 +43,36 @@ const ForgotPassword = () => {
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate all fields are present
+    if (!email || !code || !newPassword) {
+      setMessage("Please fill in all fields");
+      return;
+    }
+
     setLoading(true);
     setMessage("");
+    
+    console.log("Resetting password with:", { email, code: code.length, newPassword: "***" });
+    
     try {
       const res = await fetch("http://localhost:3001/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, token, newPassword }),
+        body: JSON.stringify({ email, code, newPassword }),
       });
       const data = await res.json();
+      
+      console.log("Reset password response:", data);
+      
       if (data.success) {
         setMessage("Password reset successful! Redirecting to login...");
         setTimeout(() => navigate("/login"), 2000);
       } else {
         setMessage(data.error || "Failed to reset password.");
       }
-    } catch {
+    } catch (error) {
+      console.error("Reset password error:", error);
       setMessage("Error resetting password.");
     } finally {
       setLoading(false);
@@ -100,15 +112,31 @@ const ForgotPassword = () => {
                 ) : (
                   <form onSubmit={handleResetPassword} className="space-y-4">
                     <h2 className="text-xl font-bold mb-2">Reset Password</h2>
+                    
+                    {/* Show email (read-only) */}
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Reset Token</label>
+                      <label className="text-sm font-medium">Email</label>
+                      <Input
+                        type="email"
+                        value={email}
+                        readOnly
+                        className="bg-muted"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Verification Code</label>
                       <Input
                         type="text"
-                        placeholder="Enter the reset token"
-                        value={token}
-                        onChange={e => setToken(e.target.value)}
+                        placeholder="Enter 6-digit code from email"
+                        value={code}
+                        onChange={e => setCode(e.target.value)}
+                        maxLength={6}
                         required
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Check your email inbox for the 6-digit verification code
+                      </p>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">New Password</label>
@@ -135,9 +163,26 @@ const ForgotPassword = () => {
                     <Button type="submit" variant="hero" className="w-full" disabled={loading}>
                       {loading ? "Resetting..." : "Reset Password"}
                     </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      className="w-full" 
+                      onClick={() => {
+                        setStep(1);
+                        setCode("");
+                        setNewPassword("");
+                        setMessage("");
+                      }}
+                    >
+                      ← Back to Email Entry
+                    </Button>
                   </form>
                 )}
-                {message && <p className="mt-4 text-sm text-center text-primary font-medium">{message}</p>}
+                {message && (
+                  <p className={`mt-4 text-sm text-center font-medium ${message.includes("successful") || message.includes("sent") ? "text-green-600" : "text-red-600"}`}>
+                    {message}
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
